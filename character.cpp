@@ -1,8 +1,7 @@
 #include <limits.h>
 
-#include "character.hpp"
-#include "poke327.hpp"
-#include "io.hpp"
+#include "poke327.h"
+#include "io.h"
 
 /***********************************************************************
  * Hack: Avoid the "path to a building" issue by making building cells *
@@ -25,387 +24,226 @@ const char *char_type_name[num_character_types] = {
   "Trainer",
 };
 
-// void character_class::copy(character_class *npc) {
-//   this->pos[dim_x] = npc->pos[dim_x];
-//   this->pos[dim_y] = npc->pos[dim_y];
-//   this->symbol = npc->symbol;
-//   this->next_turn = npc->next_turn;
-//   this->ctype = npc->ctype;
-//   this->mtype = npc->mtype;
-//   this->dir[dim_x] = npc->dir[dim_x];
-//   this->dir[dim_y] = npc->dir[dim_y];
-//   this->defeated = npc->defeated;
-// }
-
-// void character_class::move(pair_t& dest) {
-//   //do nothing
-// }
-
-// void hiker_class::move(pair_t& dest)
-// {
-//   int min;
-//   int base;
-//   int i;
-//   base = rand() & 0x7;
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-//   min = INT_MAX;
-//   for (i = base; i < 8 + base; i++) {
-//     if ((world.hiker_dist[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                          [pos[dim_x] + all_dirs[i & 0x7][dim_x]] <=
-//          min) &&
-//         !world.cur_map->cmap[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                             [pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
-//       dest[dim_x] = pos[dim_x] + all_dirs[i & 0x7][dim_x];
-//       dest[dim_y] = pos[dim_y] + all_dirs[i & 0x7][dim_y];
-//       min = world.hiker_dist[dest[dim_y]][dest[dim_x]];
-//     }
-//     if (world.hiker_dist[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                         [pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
-//       io_battle(this, &world.pc);
-//       break;
-//     }
-//   }
-// }
-
-// void rival_class::move(pair_t& dest)
-// {
-//   int min;
-//   int base;
-//   int i;
-//   base = rand() & 0x7;
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-//   min = INT_MAX;
-//   for (i = base; i < 8 + base; i++) {
-//     if ((world.rival_dist[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                          [pos[dim_x] + all_dirs[i & 0x7][dim_x]] <
-//          min) &&
-//         !world.cur_map->cmap[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                             [pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
-//       dest[dim_x] = pos[dim_x] + all_dirs[i & 0x7][dim_x];
-//       dest[dim_y] = pos[dim_y] + all_dirs[i & 0x7][dim_y];
-//       min = world.rival_dist[dest[dim_y]][dest[dim_x]];
-//     }
-//     if (world.rival_dist[pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-//                         [pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
-//       io_battle(this, &world.pc);
-//       break;
-//     }
-//   }
-// }
-
-// void pacer_class::move(pair_t& dest)
-// {
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-//   if (!defeated &&
-//       world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] ==
-//       &world.pc) {
-//       io_battle(this, &world.pc);
-//       return;
-//   }
-//   if ((world.cur_map->map[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] !=
-//        world.cur_map->map[pos[dim_y]][pos[dim_x]]) ||
-//       world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]]) {
-//     dir[dim_x] *= -1;
-//     dir[dim_y] *= -1;
-//   }
-//   if ((world.cur_map->map[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] ==
-//        world.cur_map->map[pos[dim_y]][pos[dim_x]]) &&
-//       !world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                           [pos[dim_x] + dir[dim_x]]) {
-//     dest[dim_x] = pos[dim_x] + dir[dim_x];
-//     dest[dim_y] = pos[dim_y] + dir[dim_y];
-//   }
-// }
-
-// void wanderer_class::move(pair_t& dest)
-// {
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-//   if (!defeated &&
-//       world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] ==
-//       &world.pc) {
-//       io_battle(this, &world.pc);
-//       return;
-//   }
-//   if ((world.cur_map->map[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] !=
-//        world.cur_map->map[pos[dim_y]][pos[dim_x]]) ||
-//       world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]]) {
-//     rand_dir(dir);
-//   }
-//   if ((world.cur_map->map[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] ==
-//        world.cur_map->map[pos[dim_y]][pos[dim_x]]) &&
-//       !world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                           [pos[dim_x] + dir[dim_x]]) {
-//     dest[dim_x] = pos[dim_x] + dir[dim_x];
-//     dest[dim_y] = pos[dim_y] + dir[dim_y];
-//   }
-// }
-
-// void wanderer_class::copy(character_class *npc) {
-//   this->pos[dim_x] = npc->pos[dim_x];
-//   this->pos[dim_y] = npc->pos[dim_y];
-//   this->symbol = npc->symbol;
-//   this->next_turn = npc->next_turn;
-//   this->ctype = npc->ctype;
-//   this->mtype = (movement_type) move_wander;
-//   this->dir[dim_x] = npc->dir[dim_x];
-//   this->dir[dim_y] = npc->dir[dim_y];
-//   this->defeated = true;
-// }
-
-// void sentry_class::move(pair_t& dest)
-// {
-//   // Not a bug.  Sentries are non-aggro.
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-// }
-
-// void explorer_class::move(pair_t& dest)
-// {
-//   dest[dim_x] = pos[dim_x];
-//   dest[dim_y] = pos[dim_y];
-//   if (!defeated &&
-//       world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                          [pos[dim_x] + dir[dim_x]] ==
-//       &world.pc) {
-//       io_battle(this, &world.pc);
-//       return;
-//   }
-//   if ((move_cost[char_other][world.cur_map->map[pos[dim_y] +
-//                                                 dir[dim_y]]
-//                                                [pos[dim_x] +
-//                                                 dir[dim_x]]] ==
-//        INT_MAX) || world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                                       [pos[dim_x] + dir[dim_x]]) {
-//     dir[dim_x] *= -1;
-//     dir[dim_y] *= -1;
-//   }
-//   if ((move_cost[char_other][world.cur_map->map[pos[dim_y] +
-//                                                 dir[dim_y]]
-//                                                [pos[dim_x] +
-//                                                 dir[dim_x]]] !=
-//        INT_MAX) &&
-//       !world.cur_map->cmap[pos[dim_y] + dir[dim_y]]
-//                           [pos[dim_x] + dir[dim_x]]) {
-//     dest[dim_x] = pos[dim_x] + dir[dim_x];
-//     dest[dim_y] = pos[dim_y] + dir[dim_y];
-//   }
-// }
-
-// void pc_class::move(pair_t& dest)
-// {
-//   io_display();
-//   io_handle_input(dest);
-// }
-
-void move_character(character_class *c, pair_t dest)
+static void move_hiker_func(character *c, pair_t dest)
 {
   int min;
   int base;
   int i;
-  switch (c->mtype)
-  {
-  case move_pc:
-    io_display();
-    io_handle_input(dest);
-    break;
-  case move_hiker:
-    base = rand() & 0x7;
 
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-    min = INT_MAX;
+  base = rand() & 0x7;
 
-    for (i = base; i < 8 + base; i++) {
-      if ((world.hiker_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                           [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] <=
-           min) &&
-          !world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                              [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
-        dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
-        dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
-        min = world.hiker_dist[dest[dim_y]][dest[dim_x]];
-      }
-      if (world.hiker_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                          [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
-        io_battle(c, &world.pc);
-        break;
-      }
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+  min = INT_MAX;
+  
+  for (i = base; i < 8 + base; i++) {
+    if ((world.hiker_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                         [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] <=
+         min) &&
+        !world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                            [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
+      dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
+      dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
+      min = world.hiker_dist[dest[dim_y]][dest[dim_x]];
     }
-    break;
-  case move_rival:
-    base = rand() & 0x7;
-
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-    min = INT_MAX;
-
-    for (i = base; i < 8 + base; i++) {
-      if ((world.rival_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                           [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] <
-           min) &&
-          !world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                              [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
-        dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
-        dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
-        min = world.rival_dist[dest[dim_y]][dest[dim_x]];
-      }
-      if (world.rival_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
-                          [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
-        io_battle(c, &world.pc);
-        break;
-      }
+    if (world.hiker_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                        [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
+      io_battle(c, &world.pc);
+      break;
     }
-    break;
-  case move_pace:
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-
-    if (!c->defeated &&
-        world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] ==
-        &world.pc) {
-        io_battle(c, &world.pc);
-        return;
-    }
-
-    if ((world.cur_map->map[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] !=
-         world.cur_map->map[c->pos[dim_y]][c->pos[dim_x]]) ||
-        world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]]) {
-      c->dir[dim_x] *= -1;
-      c->dir[dim_y] *= -1;
-    }
-
-    if ((world.cur_map->map[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] ==
-         world.cur_map->map[c->pos[dim_y]][c->pos[dim_x]]) &&
-        !world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                            [c->pos[dim_x] + c->dir[dim_x]]) {
-      dest[dim_x] = c->pos[dim_x] + c->dir[dim_x];
-      dest[dim_y] = c->pos[dim_y] + c->dir[dim_y];
-    }
-    break;
-  case move_wander:
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-
-    if (!c->defeated &&
-        world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] ==
-        &world.pc) {
-        io_battle(c, &world.pc);
-        return;
-    }
-
-    if ((world.cur_map->map[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] !=
-         world.cur_map->map[c->pos[dim_y]][c->pos[dim_x]]) ||
-        world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]]) {
-      rand_dir(c->dir);
-    }
-
-    if ((world.cur_map->map[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] ==
-         world.cur_map->map[c->pos[dim_y]][c->pos[dim_x]]) &&
-        !world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                            [c->pos[dim_x] + c->dir[dim_x]]) {
-      dest[dim_x] = c->pos[dim_x] + c->dir[dim_x];
-      dest[dim_y] = c->pos[dim_y] + c->dir[dim_y];
-    }
-    break;
-  case move_walk:
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-
-    if (!c->defeated &&
-        world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                           [c->pos[dim_x] + c->dir[dim_x]] ==
-        &world.pc) {
-        io_battle(c, &world.pc);
-        return;
-    }
-
-    if ((move_cost[char_other][world.cur_map->map[c->pos[dim_y] +
-                                                  c->dir[dim_y]]
-                                                 [c->pos[dim_x] +
-                                                  c->dir[dim_x]]] ==
-         INT_MAX) || world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                                        [c->pos[dim_x] + c->dir[dim_x]]) {
-      c->dir[dim_x] *= -1;
-      c->dir[dim_y] *= -1;
-    }
-
-    if ((move_cost[char_other][world.cur_map->map[c->pos[dim_y] +
-                                                  c->dir[dim_y]]
-                                                 [c->pos[dim_x] +
-                                                  c->dir[dim_x]]] !=
-         INT_MAX) &&
-        !world.cur_map->cmap[c->pos[dim_y] + c->dir[dim_y]]
-                            [c->pos[dim_x] + c->dir[dim_x]]) {
-      dest[dim_x] = c->pos[dim_x] + c->dir[dim_x];
-      dest[dim_y] = c->pos[dim_y] + c->dir[dim_y];
-    }
-    break;
-  case move_sentry:
-    // Not a bug.  Sentries are non-aggro.
-    dest[dim_x] = c->pos[dim_x];
-    dest[dim_y] = c->pos[dim_y];
-    break;
-  default:
-    break;
   }
 }
 
+static void move_rival_func(character *c, pair_t dest)
+{
+  int min;
+  int base;
+  int i;
+  
+  base = rand() & 0x7;
+
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+  min = INT_MAX;
+  
+  for (i = base; i < 8 + base; i++) {
+    if ((world.rival_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                         [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] <
+         min) &&
+        !world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                            [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
+      dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
+      dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
+      min = world.rival_dist[dest[dim_y]][dest[dim_x]];
+    }
+    if (world.rival_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                        [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] == 0) {
+      io_battle(c, &world.pc);
+      break;
+    }
+  }
+}
+
+static void move_pacer_func(character *c, pair_t dest)
+{
+  npc *n = (npc *) c;
+  
+  dest[dim_x] = n->pos[dim_x];
+  dest[dim_y] = n->pos[dim_y];
+
+  if (!n->defeated &&
+      world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] ==
+      &world.pc) {
+      io_battle(c, &world.pc);
+      return;
+  }
+
+  if ((world.cur_map->map[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] !=
+       world.cur_map->map[n->pos[dim_y]][n->pos[dim_x]]) ||
+      world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]]) {
+    n->dir[dim_x] *= -1;
+    n->dir[dim_y] *= -1;
+  }
+
+  if ((world.cur_map->map[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] ==
+       world.cur_map->map[n->pos[dim_y]][n->pos[dim_x]]) &&
+      !world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                          [n->pos[dim_x] + n->dir[dim_x]]) {
+    dest[dim_x] = n->pos[dim_x] + n->dir[dim_x];
+    dest[dim_y] = n->pos[dim_y] + n->dir[dim_y];
+  }
+}
+
+static void move_wanderer_func(character *c, pair_t dest)
+{
+  npc *n = (npc *) c;
+
+  dest[dim_x] = n->pos[dim_x];
+  dest[dim_y] = n->pos[dim_y];
+
+  if (!n->defeated &&
+      world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] ==
+      &world.pc) {
+      io_battle(c, &world.pc);
+      return;
+  }
+
+  if ((world.cur_map->map[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] !=
+       world.cur_map->map[n->pos[dim_y]][n->pos[dim_x]]) ||
+      world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]]) {
+    rand_dir(n->dir);
+  }
+
+  if ((world.cur_map->map[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] ==
+       world.cur_map->map[n->pos[dim_y]][n->pos[dim_x]]) &&
+      !world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                          [n->pos[dim_x] + n->dir[dim_x]]) {
+    dest[dim_x] = n->pos[dim_x] + n->dir[dim_x];
+    dest[dim_y] = n->pos[dim_y] + n->dir[dim_y];
+  }
+}
+
+static void move_sentry_func(character *c, pair_t dest)
+{
+  // Not a bug.  Sentries are non-aggro.
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+}
+
+static void move_walker_func(character *c, pair_t dest)
+{
+  npc *n = (npc *) c;
+
+  dest[dim_x] = n->pos[dim_x];
+  dest[dim_y] = n->pos[dim_y];
+
+  if (!n->defeated &&
+      world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                         [n->pos[dim_x] + n->dir[dim_x]] ==
+      &world.pc) {
+      io_battle(c, &world.pc);
+      return;
+  }
+
+  if ((move_cost[char_other][world.cur_map->map[n->pos[dim_y] +
+                                                n->dir[dim_y]]
+                                               [n->pos[dim_x] +
+                                                n->dir[dim_x]]] ==
+       INT_MAX) || world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                                      [n->pos[dim_x] + n->dir[dim_x]]) {
+    n->dir[dim_x] *= -1;
+    n->dir[dim_y] *= -1;
+  }
+
+  if ((move_cost[char_other][world.cur_map->map[n->pos[dim_y] +
+                                                n->dir[dim_y]]
+                                               [n->pos[dim_x] +
+                                                n->dir[dim_x]]] !=
+       INT_MAX) &&
+      !world.cur_map->cmap[n->pos[dim_y] + n->dir[dim_y]]
+                          [n->pos[dim_x] + n->dir[dim_x]]) {
+    dest[dim_x] = n->pos[dim_x] + n->dir[dim_x];
+    dest[dim_y] = n->pos[dim_y] + n->dir[dim_y];
+  }
+}
+
+static void move_pc_func(character *c, pair_t dest)
+{
+  io_display();
+  io_handle_input(dest);
+}
+
+void (*move_func[num_movement_types])(character *, pair_t) = {
+  move_hiker_func,
+  move_rival_func,
+  move_pacer_func,
+  move_wanderer_func,
+  move_sentry_func,
+  move_walker_func,
+  move_pc_func,
+};
+
 int32_t cmp_char_turns(const void *key, const void *with)
 {
-  return ((character_class *) key)->next_turn - ((character_class *) with)->next_turn;
+  return ((character *) key)->next_turn - ((character *) with)->next_turn;
 }
 
 void delete_character(void *v)
 {
-  if (v == &world.pc) {
-    // free((pc_class *) &world.pc);
-  } else {
-    free(((character_class *) v));
-    free(v);
+  if (v != &world.pc) {
+    delete((character *) v);
   }
 }
 
 #define ter_cost(x, y, c) move_cost[c][m->map[y][x]]
 
 static int32_t hiker_cmp(const void *key, const void *with) {
-  return (world.hiker_dist[((path *) key)->pos[dim_y]]
-                          [((path *) key)->pos[dim_x]] -
-          world.hiker_dist[((path *) with)->pos[dim_y]]
-                          [((path *) with)->pos[dim_x]]);
+  return (world.hiker_dist[((path_t *) key)->pos[dim_y]]
+                          [((path_t *) key)->pos[dim_x]] -
+          world.hiker_dist[((path_t *) with)->pos[dim_y]]
+                          [((path_t *) with)->pos[dim_x]]);
 }
 
 static int32_t rival_cmp(const void *key, const void *with) {
-  return (world.rival_dist[((path *) key)->pos[dim_y]]
-                          [((path *) key)->pos[dim_x]] -
-          world.rival_dist[((path *) with)->pos[dim_y]]
-                          [((path *) with)->pos[dim_x]]);
+  return (world.rival_dist[((path_t *) key)->pos[dim_y]]
+                          [((path_t *) key)->pos[dim_x]] -
+          world.rival_dist[((path_t *) with)->pos[dim_y]]
+                          [((path_t *) with)->pos[dim_x]]);
 }
 
-void pathfind(map_class *m)
+void pathfind(map_t *m)
 {
   heap_t h;
   uint32_t x, y;
-  static path p[MAP_Y][MAP_X], *c;
+  static path_t p[MAP_Y][MAP_X], *c;
   static uint32_t initialized = 0;
 
   if (!initialized) {
@@ -438,7 +276,7 @@ void pathfind(map_class *m)
     }
   }
 
-  while ((c = (path *) heap_remove_min(&h))) {
+  while ((c = (path_t *) heap_remove_min(&h))) {
     c->hn = NULL;
     if ((p[c->pos[dim_y] - 1][c->pos[dim_x] - 1].hn) &&
         (world.hiker_dist[c->pos[dim_y] - 1][c->pos[dim_x] - 1] >
@@ -535,7 +373,7 @@ void pathfind(map_class *m)
     }
   }
 
-  while ((c = (path *) heap_remove_min(&h))) {
+  while ((c = (path_t *) heap_remove_min(&h))) {
     c->hn = NULL;
     if ((p[c->pos[dim_y] - 1][c->pos[dim_x] - 1].hn) &&
         (world.rival_dist[c->pos[dim_y] - 1][c->pos[dim_x] - 1] >

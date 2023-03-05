@@ -1,23 +1,13 @@
-#ifndef POKE327_HPP
-# define POKE327_HPP
+#ifndef POKE327_H
+# define POKE327_H
 
-# include <stdlib.h>
-# include <assert.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <string>
 
 #include "heap.h"
-#include "character.hpp"
-#include "enums.hpp"
 
-class character_class;
-class world_class;
-class map_class;
-class pc_class;
-
-#define malloc(size) ({          \
-  void *_tmp;                    \
-  assert((_tmp = malloc(size))); \
-  _tmp;                          \
-})
+#include "pair.h"
 
 /* Returns true if random float in [0,1] is less than *
  * numerator/denominator.  Uses only integer math.    */
@@ -27,13 +17,7 @@ class pc_class;
 /* Returns random integer in [min, max]. */
 # define rand_range(min, max) ((rand() % (((max) + 1) - (min))) + (min))
 
-/* Even unallocated, a WORLD_SIZE x WORLD_SIZE array of pointers is a very *
- * large thing to put on the stack.  To avoid that, world is a global.     */
-extern world_class world;
-
 # define UNUSED(f) ((void) f)
-
-typedef int16_t pair_t[num_dims];
 
 #define MAP_X              80
 #define MAP_Y              21
@@ -50,47 +34,99 @@ typedef int16_t pair_t[num_dims];
 #define heightpair(pair) (m->height[pair[dim_y]][pair[dim_x]])
 #define heightxy(x, y) (m->height[y][x])
 
-class map_class {
-  public:
-    map_class(heap_t turn, int32_t num_trainers, int8_t n, int8_t s, int8_t e, int8_t w)
-    {
-      this->turn = turn;
-      this->num_trainers = num_trainers;
-      this->n = n;
-      this->s = s;
-      this->e = e;
-      this->w = w;
-    }
-    terrain_type map[MAP_Y][MAP_X];
-    uint8_t height[MAP_Y][MAP_X];
-    character_class *cmap[MAP_Y][MAP_X];
-    heap_t turn;
-    int32_t num_trainers;
-    int8_t n, s, e, w;
+typedef enum __attribute__ ((__packed__)) terrain_type {
+  ter_boulder,
+  ter_tree,
+  ter_path,
+  ter_mart,
+  ter_center,
+  ter_grass,
+  ter_clearing,
+  ter_mountain,
+  ter_forest,
+  ter_exit,
+  num_terrain_types
+} terrain_type_t;
+
+typedef enum __attribute__ ((__packed__)) movement_type {
+  move_hiker,
+  move_rival,
+  move_pace,
+  move_wander,
+  move_sentry,
+  move_walk,
+  move_pc,
+  num_movement_types
+} movement_type_t;
+
+typedef enum __attribute__ ((__packed__)) character_type {
+  char_pc,
+  char_hiker,
+  char_rival,
+  char_other,
+  num_character_types
+} character_type_t;
+
+class character {
+ public:
+  virtual ~character() {};
+
+  pair_t pos;
+  char symbol;
+  int next_turn;
 };
 
-class world_class {
-  public:
-    world_class() {}
-    world_class(pair_t cur_idx, map_class *cur_map, character_class pc, int quit, int add_trainer_prob)
-    {
-      this->cur_idx[dim_x] = cur_idx[dim_x];
-      this->cur_idx[dim_y] = cur_idx[dim_y];
-      this->pc = pc;
-      this->quit = quit;
-      this->add_trainer_prob = add_trainer_prob;
-    }
-    map_class *world[WORLD_SIZE][WORLD_SIZE];
-    pair_t cur_idx;
-    map_class *cur_map;
-    /* Please distance maps in world, not map, since *
-     * we only need one pair at any given time.      */
-    int hiker_dist[MAP_Y][MAP_X];
-    int rival_dist[MAP_Y][MAP_X];
-    character_class pc;
-    int quit;
-    int add_trainer_prob;
+class npc : public character {
+ public:
+  character_type_t ctype;
+  movement_type_t mtype;
+  int defeated;
+  pair_t dir;
 };
+
+class pc : public character {
+};
+
+/* character is defined in poke327.h to allow an instance of character
+ * in world without including character.h in poke327.h                 */
+
+int32_t cmp_char_turns(const void *key, const void *with);
+void delete_character(void *v);
+
+int pc_move(char);
+
+extern const char *char_type_name[num_character_types];
+
+extern int32_t move_cost[num_character_types][num_terrain_types];
+
+typedef struct map {
+  terrain_type_t map[MAP_Y][MAP_X];
+  uint8_t height[MAP_Y][MAP_X];
+  character *cmap[MAP_Y][MAP_X];
+  heap_t turn;
+  int32_t num_trainers;
+  int8_t n, s, e, w;
+} map_t;
+
+void pathfind(map_t *m);
+extern void (*move_func[num_movement_types])(character *, pair_t);
+
+typedef struct world {
+  map_t *world[WORLD_SIZE][WORLD_SIZE];
+  pair_t cur_idx;
+  map_t *cur_map;
+  /* Please distance maps in world, not map, since *
+   * we only need one pair at any given time.      */
+  int hiker_dist[MAP_Y][MAP_X];
+  int rival_dist[MAP_Y][MAP_X];
+  class pc pc;
+  int quit;
+  int add_trainer_prob;
+} world_t;
+
+/* Even unallocated, a WORLD_SIZE x WORLD_SIZE array of pointers is a very *
+ * large thing to put on the stack.  To avoid that, world is a global.     */
+extern world_t world;
 
 extern pair_t all_dirs[8];
 
@@ -100,13 +136,108 @@ extern pair_t all_dirs[8];
   dir[1] = all_dirs[_i][1]; \
 }
 
-struct path {
+typedef struct path {
   heap_node_t *hn;
   uint8_t pos[2];
   uint8_t from[2];
   int32_t cost;
-};
+} path_t;
 
 int new_map(int teleport);
+
+struct pokedex_pokemon {
+  int id;
+  std::string identifier;
+  int species_id;
+  int height;
+  int weight;
+  int base_experience;
+  int order;
+  int is_default;
+};
+
+struct pokedex_poke_moves {
+  int pokemon_id;
+  int version_group_id;
+  int move_id;
+  int pokemon_move_method_id;
+  int level;
+  int order;
+};
+
+struct pokedex_poke_species {
+  int id;
+  std::string identifier;
+  int generation_id;
+  int evolves_from_species_id;
+  int evolution_chain_id;
+  int color_id;
+  int shape_id;
+  int habitat_id;
+  int gender_rate;
+  int capture_rate;
+  int base_happiness;
+  int is_baby;
+  int hatch_counter;
+  int has_gender_differences;
+  int growth_rate_id;
+  int forms_switchable;
+  int is_legendary;
+  int is_mythical;
+  int order;
+  int conquest_order;
+};
+
+struct pokedex_poke_stats {
+  int pokemon_id;
+  int stat_id;
+  int base_stat;
+  int effort;
+};
+
+struct pokedex_poke_types {
+  int pokemon_id;
+  int type_id;
+  int slot;
+};
+
+struct pokedex_experience {
+  int growth_rate_id;
+  int level;
+  int experience;
+};
+
+struct pokedex_type_names {
+  int type_id;
+  int local_language_id;
+  std::string name;
+};
+
+struct pokedex_moves {
+  int id;
+  std::string identifier;
+  int generation_id;
+  int type_id;
+  int power;
+  int pp;
+  int accuracy;
+  int priority;
+  int target_id;
+  int damage_class_id;
+  int effect_id;
+  int effect_chance;
+  int contest_type_id;
+  int contest_effect_id;
+  int super_contest_effect_id;
+};
+
+struct pokedex_stats {
+  int id;
+  int damage_class_id;
+  std::string identifier;
+  int is_battle_only;
+  int game_index;
+};
+
 
 #endif

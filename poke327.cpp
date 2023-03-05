@@ -8,18 +8,25 @@
 #include <sys/time.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <iostream>
+#include <fstream>
+#include <ostream>
+#include <sstream>
 
 #include "heap.h"
-#include "poke327.hpp"
-#include "character.hpp"
-#include "io.hpp"
+#include "poke327.h"
+#include "io.h"
 
-struct queue_node {
+using std::cout;
+using std::string;
+
+typedef struct queue_node {
   int x, y;
-  queue_node *next;
-};
+  struct queue_node *next;
+} queue_node_t;
 
-world_class world;
+world_t world;
 
 pair_t all_dirs[8] = {
   { -1, -1 },
@@ -33,7 +40,7 @@ pair_t all_dirs[8] = {
 };
 
 static int32_t path_cmp(const void *key, const void *with) {
-  return ((path *) key)->cost - ((path *) with)->cost;
+  return ((path_t *) key)->cost - ((path_t *) with)->cost;
 }
 
 static int32_t edge_penalty(int8_t x, int8_t y)
@@ -41,18 +48,18 @@ static int32_t edge_penalty(int8_t x, int8_t y)
   return (x == 1 || y == 1 || x == MAP_X - 2 || y == MAP_Y - 2) ? 2 : 1;
 }
 
-static void dijkstra_path(map_class *m, pair_t from, pair_t to)
+static void dijkstra_path(map_t *m, pair_t from, pair_t to)
 {
-  static path paths[MAP_Y][MAP_X], *p;
+  static path_t path[MAP_Y][MAP_X], *p;
   static uint32_t initialized = 0;
   heap_t h;
-  uint32_t x, y;
+  int32_t x, y;
 
   if (!initialized) {
     for (y = 0; y < MAP_Y; y++) {
       for (x = 0; x < MAP_X; x++) {
-        paths[y][x].pos[dim_y] = y;
-        paths[y][x].pos[dim_x] = x;
+        path[y][x].pos[dim_y] = y;
+        path[y][x].pos[dim_x] = x;
       }
     }
     initialized = 1;
@@ -60,86 +67,86 @@ static void dijkstra_path(map_class *m, pair_t from, pair_t to)
   
   for (y = 0; y < MAP_Y; y++) {
     for (x = 0; x < MAP_X; x++) {
-      paths[y][x].cost = INT_MAX;
+      path[y][x].cost = INT_MAX;
     }
   }
 
-  paths[from[dim_y]][from[dim_x]].cost = 0;
+  path[from[dim_y]][from[dim_x]].cost = 0;
 
   heap_init(&h, path_cmp, NULL);
 
   for (y = 1; y < MAP_Y - 1; y++) {
     for (x = 1; x < MAP_X - 1; x++) {
-      paths[y][x].hn = heap_insert(&h, &paths[y][x]);
+      path[y][x].hn = heap_insert(&h, &path[y][x]);
     }
   }
 
-  while ((p = (path *) heap_remove_min(&h))) {
+  while ((p = (path_t *) heap_remove_min(&h))) {
     p->hn = NULL;
 
     if ((p->pos[dim_y] == to[dim_y]) && p->pos[dim_x] == to[dim_x]) {
       for (x = to[dim_x], y = to[dim_y];
-           (x != (uint32_t) from[dim_x]) || (y != (uint32_t) from[dim_y]);
-           p = &paths[y][x], x = p->from[dim_x], y = p->from[dim_y]) {
-        mapxy(x, y) = (terrain_type) ter_path;
+           (x != from[dim_x]) || (y != from[dim_y]);
+           p = &path[y][x], x = p->from[dim_x], y = p->from[dim_y]) {
+        mapxy(x, y) = ter_path;
         heightxy(x, y) = 0;
       }
       heap_delete(&h);
       return;
     }
 
-    if ((paths[p->pos[dim_y] - 1][p->pos[dim_x]    ].hn) &&
-        (paths[p->pos[dim_y] - 1][p->pos[dim_x]    ].cost >
+    if ((path[p->pos[dim_y] - 1][p->pos[dim_x]    ].hn) &&
+        (path[p->pos[dim_y] - 1][p->pos[dim_x]    ].cost >
          ((p->cost + heightpair(p->pos)) *
           edge_penalty(p->pos[dim_x], p->pos[dim_y] - 1)))) {
-      paths[p->pos[dim_y] - 1][p->pos[dim_x]    ].cost =
+      path[p->pos[dim_y] - 1][p->pos[dim_x]    ].cost =
         ((p->cost + heightpair(p->pos)) *
          edge_penalty(p->pos[dim_x], p->pos[dim_y] - 1));
-      paths[p->pos[dim_y] - 1][p->pos[dim_x]    ].from[dim_y] = p->pos[dim_y];
-      paths[p->pos[dim_y] - 1][p->pos[dim_x]    ].from[dim_x] = p->pos[dim_x];
-      heap_decrease_key_no_replace(&h, paths[p->pos[dim_y] - 1]
+      path[p->pos[dim_y] - 1][p->pos[dim_x]    ].from[dim_y] = p->pos[dim_y];
+      path[p->pos[dim_y] - 1][p->pos[dim_x]    ].from[dim_x] = p->pos[dim_x];
+      heap_decrease_key_no_replace(&h, path[p->pos[dim_y] - 1]
                                            [p->pos[dim_x]    ].hn);
     }
-    if ((paths[p->pos[dim_y]    ][p->pos[dim_x] - 1].hn) &&
-        (paths[p->pos[dim_y]    ][p->pos[dim_x] - 1].cost >
+    if ((path[p->pos[dim_y]    ][p->pos[dim_x] - 1].hn) &&
+        (path[p->pos[dim_y]    ][p->pos[dim_x] - 1].cost >
          ((p->cost + heightpair(p->pos)) *
           edge_penalty(p->pos[dim_x] - 1, p->pos[dim_y])))) {
-      paths[p->pos[dim_y]][p->pos[dim_x] - 1].cost =
+      path[p->pos[dim_y]][p->pos[dim_x] - 1].cost =
         ((p->cost + heightpair(p->pos)) *
          edge_penalty(p->pos[dim_x] - 1, p->pos[dim_y]));
-      paths[p->pos[dim_y]    ][p->pos[dim_x] - 1].from[dim_y] = p->pos[dim_y];
-      paths[p->pos[dim_y]    ][p->pos[dim_x] - 1].from[dim_x] = p->pos[dim_x];
-      heap_decrease_key_no_replace(&h, paths[p->pos[dim_y]    ]
+      path[p->pos[dim_y]    ][p->pos[dim_x] - 1].from[dim_y] = p->pos[dim_y];
+      path[p->pos[dim_y]    ][p->pos[dim_x] - 1].from[dim_x] = p->pos[dim_x];
+      heap_decrease_key_no_replace(&h, path[p->pos[dim_y]    ]
                                            [p->pos[dim_x] - 1].hn);
     }
-    if ((paths[p->pos[dim_y]    ][p->pos[dim_x] + 1].hn) &&
-        (paths[p->pos[dim_y]    ][p->pos[dim_x] + 1].cost >
+    if ((path[p->pos[dim_y]    ][p->pos[dim_x] + 1].hn) &&
+        (path[p->pos[dim_y]    ][p->pos[dim_x] + 1].cost >
          ((p->cost + heightpair(p->pos)) *
           edge_penalty(p->pos[dim_x] + 1, p->pos[dim_y])))) {
-      paths[p->pos[dim_y]][p->pos[dim_x] + 1].cost =
+      path[p->pos[dim_y]][p->pos[dim_x] + 1].cost =
         ((p->cost + heightpair(p->pos)) *
          edge_penalty(p->pos[dim_x] + 1, p->pos[dim_y]));
-      paths[p->pos[dim_y]    ][p->pos[dim_x] + 1].from[dim_y] = p->pos[dim_y];
-      paths[p->pos[dim_y]    ][p->pos[dim_x] + 1].from[dim_x] = p->pos[dim_x];
-      heap_decrease_key_no_replace(&h, paths[p->pos[dim_y]    ]
+      path[p->pos[dim_y]    ][p->pos[dim_x] + 1].from[dim_y] = p->pos[dim_y];
+      path[p->pos[dim_y]    ][p->pos[dim_x] + 1].from[dim_x] = p->pos[dim_x];
+      heap_decrease_key_no_replace(&h, path[p->pos[dim_y]    ]
                                            [p->pos[dim_x] + 1].hn);
     }
-    if ((paths[p->pos[dim_y] + 1][p->pos[dim_x]    ].hn) &&
-        (paths[p->pos[dim_y] + 1][p->pos[dim_x]    ].cost >
+    if ((path[p->pos[dim_y] + 1][p->pos[dim_x]    ].hn) &&
+        (path[p->pos[dim_y] + 1][p->pos[dim_x]    ].cost >
          ((p->cost + heightpair(p->pos)) *
           edge_penalty(p->pos[dim_x], p->pos[dim_y] + 1)))) {
-      paths[p->pos[dim_y] + 1][p->pos[dim_x]    ].cost =
+      path[p->pos[dim_y] + 1][p->pos[dim_x]    ].cost =
         ((p->cost + heightpair(p->pos)) *
          edge_penalty(p->pos[dim_x], p->pos[dim_y] + 1));
-      paths[p->pos[dim_y] + 1][p->pos[dim_x]    ].from[dim_y] = p->pos[dim_y];
-      paths[p->pos[dim_y] + 1][p->pos[dim_x]    ].from[dim_x] = p->pos[dim_x];
-      heap_decrease_key_no_replace(&h, paths[p->pos[dim_y] + 1]
+      path[p->pos[dim_y] + 1][p->pos[dim_x]    ].from[dim_y] = p->pos[dim_y];
+      path[p->pos[dim_y] + 1][p->pos[dim_x]    ].from[dim_x] = p->pos[dim_x];
+      heap_decrease_key_no_replace(&h, path[p->pos[dim_y] + 1]
                                            [p->pos[dim_x]    ].hn);
     }
   }
 }
 
-static int build_paths(map_class *m)
+static int build_paths(map_t *m)
 {
   pair_t from, to;
 
@@ -238,11 +245,11 @@ static int gaussian[5][5] = {
   {  1,  4,  7,  4,  1 }
 };
 
-static int smooth_height(map_class *m)
+static int smooth_height(map_t *m)
 {
   int32_t i, x, y;
   int32_t s, t, p, q;
-  queue_node *head, *tail, *tmp;
+  queue_node_t *head, *tail, *tmp;
   /*  FILE *out;*/
   uint8_t height[MAP_Y][MAP_X];
 
@@ -256,9 +263,9 @@ static int smooth_height(map_class *m)
     } while (height[y][x]);
     height[y][x] = i;
     if (i == 1) {
-      head = tail = (queue_node *) malloc(sizeof (*tail));
+      head = tail = (queue_node_t *) malloc(sizeof (*tail));
     } else {
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
     }
     tail->next = NULL;
@@ -281,7 +288,7 @@ static int smooth_height(map_class *m)
 
     if (x - 1 >= 0 && y - 1 >= 0 && !height[y - 1][x - 1]) {
       height[y - 1][x - 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x - 1;
@@ -289,7 +296,7 @@ static int smooth_height(map_class *m)
     }
     if (x - 1 >= 0 && !height[y][x - 1]) {
       height[y][x - 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x - 1;
@@ -297,7 +304,7 @@ static int smooth_height(map_class *m)
     }
     if (x - 1 >= 0 && y + 1 < MAP_Y && !height[y + 1][x - 1]) {
       height[y + 1][x - 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x - 1;
@@ -305,7 +312,7 @@ static int smooth_height(map_class *m)
     }
     if (y - 1 >= 0 && !height[y - 1][x]) {
       height[y - 1][x] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x;
@@ -313,7 +320,7 @@ static int smooth_height(map_class *m)
     }
     if (y + 1 < MAP_Y && !height[y + 1][x]) {
       height[y + 1][x] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x;
@@ -321,7 +328,7 @@ static int smooth_height(map_class *m)
     }
     if (x + 1 < MAP_X && y - 1 >= 0 && !height[y - 1][x + 1]) {
       height[y - 1][x + 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x + 1;
@@ -329,7 +336,7 @@ static int smooth_height(map_class *m)
     }
     if (x + 1 < MAP_X && !height[y][x + 1]) {
       height[y][x + 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x + 1;
@@ -337,7 +344,7 @@ static int smooth_height(map_class *m)
     }
     if (x + 1 < MAP_X && y + 1 < MAP_Y && !height[y + 1][x + 1]) {
       height[y + 1][x + 1] = i;
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
       tail->next = NULL;
       tail->x = x + 1;
@@ -395,7 +402,7 @@ static int smooth_height(map_class *m)
   return 0;
 }
 
-static void find_building_location(map_class *m, pair_t p)
+static void find_building_location(map_t *m, pair_t p)
 {
   do {
     p[dim_x] = rand() % (MAP_X - 3) + 1;
@@ -426,40 +433,40 @@ static void find_building_location(map_class *m, pair_t p)
   } while (1);
 }
 
-static int place_pokemart(map_class *m)
+static int place_pokemart(map_t *m)
 {
   pair_t p;
 
   find_building_location(m, p);
 
-  mapxy(p[dim_x]    , p[dim_y]    ) = (terrain_type) ter_mart;
-  mapxy(p[dim_x] + 1, p[dim_y]    ) = (terrain_type) ter_mart;
-  mapxy(p[dim_x]    , p[dim_y] + 1) = (terrain_type) ter_mart;
-  mapxy(p[dim_x] + 1, p[dim_y] + 1) = (terrain_type) ter_mart;
+  mapxy(p[dim_x]    , p[dim_y]    ) = ter_mart;
+  mapxy(p[dim_x] + 1, p[dim_y]    ) = ter_mart;
+  mapxy(p[dim_x]    , p[dim_y] + 1) = ter_mart;
+  mapxy(p[dim_x] + 1, p[dim_y] + 1) = ter_mart;
 
   return 0;
 }
 
-static int place_center(map_class *m)
+static int place_center(map_t *m)
 {  pair_t p;
 
   find_building_location(m, p);
 
-  mapxy(p[dim_x]    , p[dim_y]    ) = (terrain_type) ter_center;
-  mapxy(p[dim_x] + 1, p[dim_y]    ) = (terrain_type) ter_center;
-  mapxy(p[dim_x]    , p[dim_y] + 1) = (terrain_type) ter_center;
-  mapxy(p[dim_x] + 1, p[dim_y] + 1) = (terrain_type) ter_center;
+  mapxy(p[dim_x]    , p[dim_y]    ) = ter_center;
+  mapxy(p[dim_x] + 1, p[dim_y]    ) = ter_center;
+  mapxy(p[dim_x]    , p[dim_y] + 1) = ter_center;
+  mapxy(p[dim_x] + 1, p[dim_y] + 1) = ter_center;
 
   return 0;
 }
 
-static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
+static int map_terrain(map_t *m, int8_t n, int8_t s, int8_t e, int8_t w)
 {
   int32_t i, x, y;
-  queue_node *head, *tail, *tmp;
+  queue_node_t *head, *tail, *tmp;
   //  FILE *out;
   int num_grass, num_clearing, num_mountain, num_forest, num_total;
-  terrain_type type;
+  terrain_type_t type;
   int added_current = 0;
   
   num_grass = rand() % 4 + 2;
@@ -477,19 +484,19 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
       y = rand() % MAP_Y;
     } while (m->map[y][x]);
     if (i == 0) {
-      type = (terrain_type) ter_grass;
+      type = ter_grass;
     } else if (i == num_grass) {
-      type = (terrain_type) ter_clearing;
+      type = ter_clearing;
     } else if (i == num_grass + num_clearing) {
-      type = (terrain_type) ter_mountain;
+      type = ter_mountain;
     } else if (i == num_grass + num_clearing + num_mountain) {
-      type = (terrain_type) ter_forest;
+      type = ter_forest;
     }
     m->map[y][x] = type;
     if (i == 0) {
-      head = tail = (queue_node *) malloc(sizeof (*tail));
+      head = tail = (queue_node_t *) malloc(sizeof (*tail));
     } else {
-      tail->next = (queue_node *) malloc(sizeof (*tail));
+      tail->next = (queue_node_t *) malloc(sizeof (*tail));
       tail = tail->next;
     }
     tail->next = NULL;
@@ -512,16 +519,16 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
     
     if (x - 1 >= 0 && !m->map[y][x - 1]) {
       if ((rand() % 100) < 80) {
-        m->map[y][x - 1] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x - 1] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x - 1;
         tail->y = y;
       } else if (!added_current) {
         added_current = 1;
-        m->map[y][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
@@ -531,16 +538,16 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
 
     if (y - 1 >= 0 && !m->map[y - 1][x]) {
       if ((rand() % 100) < 20) {
-        m->map[y - 1][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y - 1][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
         tail->y = y - 1;
       } else if (!added_current) {
         added_current = 1;
-        m->map[y][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
@@ -550,16 +557,16 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
 
     if (y + 1 < MAP_Y && !m->map[y + 1][x]) {
       if ((rand() % 100) < 20) {
-        m->map[y + 1][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y + 1][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
         tail->y = y + 1;
       } else if (!added_current) {
         added_current = 1;
-        m->map[y][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
@@ -569,16 +576,16 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
 
     if (x + 1 < MAP_X && !m->map[y][x + 1]) {
       if ((rand() % 100) < 80) {
-        m->map[y][x + 1] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x + 1] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x + 1;
         tail->y = y;
       } else if (!added_current) {
         added_current = 1;
-        m->map[y][x] = (terrain_type) i;
-        tail->next = (queue_node *) malloc(sizeof (*tail));
+        m->map[y][x] = (terrain_type_t) i;
+        tail->next = (queue_node_t *) malloc(sizeof (*tail));
         tail = tail->next;
         tail->next = NULL;
         tail->x = x;
@@ -603,7 +610,7 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
     for (x = 0; x < MAP_X; x++) {
       if (y == 0 || y == MAP_Y - 1 ||
           x == 0 || x == MAP_X - 1) {
-        mapxy(x, y) = (terrain_type) ter_boulder;
+        mapxy(x, y) = ter_boulder;
       }
     }
   }
@@ -614,26 +621,26 @@ static int map_classerrain(map_class *m, int8_t n, int8_t s, int8_t e, int8_t w)
   m->w = w;
 
   if (n != -1) {
-    mapxy(n,         0        ) = (terrain_type) ter_exit;
-    mapxy(n,         1        ) = (terrain_type) ter_path;
+    mapxy(n,         0        ) = ter_exit;
+    mapxy(n,         1        ) = ter_path;
   }
   if (s != -1) {
-    mapxy(s,         MAP_Y - 1) = (terrain_type) ter_exit;
-    mapxy(s,         MAP_Y - 2) = (terrain_type) ter_path;
+    mapxy(s,         MAP_Y - 1) = ter_exit;
+    mapxy(s,         MAP_Y - 2) = ter_path;
   }
   if (w != -1) {
-    mapxy(0,         w        ) = (terrain_type) ter_exit;
-    mapxy(1,         w        ) = (terrain_type) ter_path;
+    mapxy(0,         w        ) = ter_exit;
+    mapxy(1,         w        ) = ter_path;
   }
   if (e != -1) {
-    mapxy(MAP_X - 1, e        ) = (terrain_type) ter_exit;
-    mapxy(MAP_X - 2, e        ) = (terrain_type) ter_path;
+    mapxy(MAP_X - 1, e        ) = ter_exit;
+    mapxy(MAP_X - 2, e        ) = ter_path;
   }
 
   return 0;
 }
 
-static int place_boulders(map_class *m)
+static int place_boulders(map_t *m)
 {
   int i;
   int x, y;
@@ -642,14 +649,14 @@ static int place_boulders(map_class *m)
     y = rand() % (MAP_Y - 2) + 1;
     x = rand() % (MAP_X - 2) + 1;
     if (m->map[y][x] != ter_forest && m->map[y][x] != ter_path) {
-      m->map[y][x] = (terrain_type) ter_boulder;
+      m->map[y][x] = ter_boulder;
     }
   }
 
   return 0;
 }
 
-static int place_trees(map_class *m)
+static int place_trees(map_t *m)
 {
   int i;
   int x, y;
@@ -658,7 +665,7 @@ static int place_trees(map_class *m)
     y = rand() % (MAP_Y - 2) + 1;
     x = rand() % (MAP_X - 2) + 1;
     if (m->map[y][x] != ter_mountain && m->map[y][x] != ter_path) {
-      m->map[y][x] = (terrain_type) ter_tree;
+      m->map[y][x] = ter_tree;
     }
   }
 
@@ -674,7 +681,7 @@ void rand_pos(pair_t pos)
 void new_hiker()
 {
   pair_t pos;
-  character_class *c;
+  npc *c;
 
   do {
     rand_pos(pos);
@@ -683,14 +690,14 @@ void new_hiker()
            pos[dim_x] < 3 || pos[dim_x] > MAP_X - 4            ||
            pos[dim_y] < 3 || pos[dim_y] > MAP_Y - 4);
 
-  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = (character_class *) malloc(sizeof (*c));
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = new npc;
   c->pos[dim_y] = pos[dim_y];
   c->pos[dim_x] = pos[dim_x];
-  c->ctype = (character_type) char_hiker;
-  c->mtype = (movement_type) move_hiker;
+  c->ctype = char_hiker;
+  c->mtype = move_hiker;
   c->dir[dim_x] = 0;
   c->dir[dim_y] = 0;
-  c->defeated = false;
+  c->defeated = 0;
   c->symbol = 'h';
   c->next_turn = 0;
   heap_insert(&world.cur_map->turn, c);
@@ -702,7 +709,7 @@ void new_hiker()
 void new_rival()
 {
   pair_t pos;
-  character_class *c;
+  npc *c;
 
   do {
     rand_pos(pos);
@@ -712,14 +719,14 @@ void new_rival()
            pos[dim_x] < 3 || pos[dim_x] > MAP_X - 4            ||
            pos[dim_y] < 3 || pos[dim_y] > MAP_Y - 4);
 
-  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = (character_class *) malloc(sizeof (*c));
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = new npc;
   c->pos[dim_y] = pos[dim_y];
   c->pos[dim_x] = pos[dim_x];
-  c->ctype = (character_type) char_rival;
-  c->mtype = (movement_type) move_rival;
+  c->ctype = char_rival;
+  c->mtype = move_rival;
   c->dir[dim_x] = 0;
   c->dir[dim_y] = 0;
-  c->defeated = false;
+  c->defeated = 0;
   c->symbol = 'r';
   c->next_turn = 0;
   heap_insert(&world.cur_map->turn, c);
@@ -729,7 +736,7 @@ void new_rival()
 void new_char_other()
 {
   pair_t pos;
-  character_class *c;
+  npc *c;
 
   do {
     rand_pos(pos);
@@ -739,30 +746,30 @@ void new_char_other()
            pos[dim_x] < 3 || pos[dim_x] > MAP_X - 4            ||
            pos[dim_y] < 3 || pos[dim_y] > MAP_Y - 4);
 
-  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = (character_class *) malloc(sizeof (*c));
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c = new npc;
   c->pos[dim_y] = pos[dim_y];
   c->pos[dim_x] = pos[dim_x];
-  c->ctype = (character_type) char_other;
+  c->ctype = char_other;
   switch (rand() % 4) {
   case 0:
-    c->mtype = (movement_type) move_pace;
+    c->mtype = move_pace;
     c->symbol = 'p';
     break;
   case 1:
-    c->mtype = (movement_type) move_wander;
+    c->mtype = move_wander;
     c->symbol = 'w';
     break;
   case 2:
-    c->mtype = (movement_type) move_sentry;
+    c->mtype = move_sentry;
     c->symbol = 's';
     break;
   case 3:
-    c->mtype = (movement_type) move_walk;
+    c->mtype = move_walk;
     c->symbol = 'n';
     break;
   }
   rand_dir(c->dir);
-  c->defeated = false;
+  c->defeated = 0;
   c->next_turn = 0;
   heap_insert(&world.cur_map->turn, c);
   world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c;
@@ -817,7 +824,7 @@ void init_pc()
 
 void place_pc()
 {
-  character_class *c;
+  character *c;
 
   if (world.pc.pos[dim_x] == 1) {
     world.pc.pos[dim_x] = MAP_X - 2;
@@ -831,7 +838,7 @@ void place_pc()
 
   world.cur_map->cmap[world.pc.pos[dim_y]][world.pc.pos[dim_x]] = &world.pc;
 
-  if ((c = (character_class *) heap_peek_min(&world.cur_map->turn))) {
+  if ((c = (character *) heap_peek_min(&world.cur_map->turn))) {
     world.pc.next_turn = c->next_turn;
   } else {
     world.pc.next_turn = 0;
@@ -856,7 +863,7 @@ int new_map(int teleport)
 
   world.cur_map                                             =
     world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]] =
-    (map_class *) malloc(sizeof (*world.cur_map));
+    (map_t *) malloc(sizeof (*world.cur_map));
 
   smooth_height(world.cur_map);
   
@@ -889,7 +896,7 @@ int new_map(int teleport)
     e = 3 + rand() % (MAP_Y - 6);
   }
   
-  map_classerrain(world.cur_map, n, s, e, w);
+  map_terrain(world.cur_map, n, s, e, w);
      
   place_boulders(world.cur_map);
   place_trees(world.cur_map);
@@ -920,7 +927,6 @@ int new_map(int teleport)
     place_pc();
   }
 
-  pathfind(world.cur_map);
   if (teleport) {
     do {
       world.cur_map->cmap[world.pc.pos[dim_y]][world.pc.pos[dim_x]] = NULL;
@@ -932,8 +938,9 @@ int new_map(int teleport)
               INT_MAX)                                                      ||
              world.rival_dist[world.pc.pos[dim_y]][world.pc.pos[dim_x]] < 0);
     world.cur_map->cmap[world.pc.pos[dim_y]][world.pc.pos[dim_x]] = &world.pc;
-    pathfind(world.cur_map);
   }
+
+  pathfind(world.cur_map);
   
   place_characters();
 
@@ -945,7 +952,9 @@ static void print_map()
 {
   int x, y;
   int default_reached = 0;
+
   printf("\n\n\n");
+
   for (y = 0; y < MAP_Y; y++) {
     for (x = 0; x < MAP_X; x++) {
       if (world.cur_map->cmap[y][x]) {
@@ -983,6 +992,7 @@ static void print_map()
     }
     putchar('\n');
   }
+
   if (default_reached) {
     fprintf(stderr, "Default reached in %s\n", __FUNCTION__);
   }
@@ -1047,26 +1057,46 @@ void print_rival_dist()
   }
 }
 
+void leave_map(pair_t d)
+{
+  if (d[dim_x] == 0) {
+    world.cur_idx[dim_x]--;
+  } else if (d[dim_y] == 0) {
+    world.cur_idx[dim_y]--;
+  } else if (d[dim_x] == MAP_X - 1) {
+    world.cur_idx[dim_x]++;
+  } else {
+    world.cur_idx[dim_y]++;
+  }
+  new_map(0);
+}
+
 void game_loop()
 {
-  character_class *c;
+  character *c;
   pair_t d;
-  
+  bool is_pc;
+
   while (!world.quit) {
-    c = (character_class *) heap_remove_min(&world.cur_map->turn);
+    c = (character *) heap_remove_min(&world.cur_map->turn);
+    is_pc = dynamic_cast<npc *>(c) == NULL;
 
-    // io_queue_message("c->symbol: %c", c->symbol);
-
-    move_character(c, d);
+    move_func[is_pc ? move_pc : ((npc *) c)->mtype](c, d);
 
     world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x]] = NULL;
+    if (is_pc && (d[dim_x] == 0 || d[dim_x] == MAP_X - 1 ||
+                  d[dim_y] == 0 || d[dim_y] == MAP_Y - 1)) {
+      leave_map(d);
+      d[dim_x] = c->pos[dim_x];
+      d[dim_y] = c->pos[dim_y];
+    }
     world.cur_map->cmap[d[dim_y]][d[dim_x]] = c;
 
-    if (c->symbol == '@') {
+    if (is_pc) {
       pathfind(world.cur_map);
     }
 
-    c->next_turn += move_cost[(c->symbol != '@') ? c->ctype : char_pc]
+    c->next_turn += move_cost[is_pc ? char_pc : ((npc *) c)->ctype]
                              [world.cur_map->map[d[dim_y]][d[dim_x]]];
 
     c->pos[dim_y] = d[dim_y];
@@ -1083,8 +1113,807 @@ void usage(char *s)
   exit(1);
 }
 
+pokedex_pokemon pokemon[1093];
+pokedex_poke_moves poke_moves[528239];
+pokedex_poke_species poke_species[899];
+pokedex_poke_stats poke_stats[6553];
+pokedex_poke_types poke_types[1676];
+pokedex_experience experience[601];
+pokedex_type_names type_names[19];
+pokedex_moves moves[845];
+pokedex_stats stats[9];
+
+void initFiles()
+{
+  for (int i = 0; i < 1093; i++)
+  {
+    pokemon[i] = pokedex_pokemon();
+  }
+
+  for (int i = 0; i < 528239; i++)
+  {
+    poke_moves[i] = pokedex_poke_moves();
+  }
+
+  for (int i = 0; i < 899; i++)
+  {
+    poke_species[i] = pokedex_poke_species();
+  }
+
+  for (int i = 0; i < 6553; i++)
+  {
+    poke_stats[i] = pokedex_poke_stats();
+  }
+
+  for (int i = 0; i < 1676; i++)
+  {
+    poke_types[i] = pokedex_poke_types();
+  }
+
+  for (int i = 0; i < 601; i++)
+  {
+    experience[i] = pokedex_experience();
+  }
+
+  for (int i = 0; i < 19; i++)
+  {
+    type_names[i] = pokedex_type_names();
+  }
+
+  for (int i = 0; i < 845; i++)
+  {
+    moves[i] = pokedex_moves();
+  }
+  for (int i = 0; i < 9; i++)
+  {
+    stats[i] = pokedex_stats();
+  }
+}
+
+std::string getBase()
+{
+  struct stat buffer;
+  string base;
+  char* check;
+  base = getenv("HOME");
+  base += "/.poke327/pokedex/pokedex/data/csv/";
+  check = (char *) malloc(base.size());
+  check = (char *) base.c_str();
+
+  if (stat(check, &buffer)) {
+    // free((void *) check);
+    check = NULL;
+  }
+
+  if(!check) {
+    if (!stat("/share/cs327", &buffer)) {
+      base = "/share/cs327/pokedex/pokedex/data/csv/";
+    } else {
+      return "";
+    }
+  }
+  // free((void *) check);
+
+  return base;
+}
+
+int getNext(string str, string deliminator)
+{
+  int num;
+  // string temp = "";
+  std::stringstream ss;
+  // cout << str << "     ";
+  if (str == "") {
+    // cout << "int max\n";
+    return INT_MAX;
+  }
+  int i = 0;
+  while (str[i] != deliminator[0]) {
+    // temp += str[i]; 
+    i++;
+    // if (str.size() == i) {
+    //   break;
+    // }
+  }
+  ss << str.substr(0, i);
+  ss >> num;
+  // cout << num << std::endl;
+  return num;
+}
+
+int parseAll()
+{
+  // cout << "parse start\n";
+  initFiles();
+  int success = 0;
+  std::ifstream f;
+  string input, file, base = getBase(), deliminator = ",";
+  if (base == "")
+  {
+    cout << "parse error\n";
+    return 1;
+  }
+
+  // cout << "parse pokemon\n";
+  file = base + "pokemon.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "pokemon\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 1093; i++) {
+    std::getline(f, input);
+    string str;
+    int temp, pos1 = 0, pos2;
+    // cout << input << std::endl;
+
+    pos2 = input.find(deliminator);
+    // cout << "parse pokemon pre getNext\n";
+    temp = getNext(input.substr(pos1, pos2), ",");
+    // cout << "parse pokemon post getNext\n";
+    pokemon[i].id = temp;
+    // cout << "parse pokemon post assign\n";
+    // cout << temp << std::endl;
+    // cout << "parse pokemon post cout temp\n";
+
+    // cout << "parse pokemon pre substring\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    // cout << "parse pokemon pre find\n";
+    pos2 = input.find(deliminator);
+    // cout << "parse pokemon pre getNext\n";
+    str = input.substr(pos1, pos2 + 1);
+    // cout << "parse pokemon pre getNext\n";
+    pokemon[i].identifier = str;
+    // cout << str << std::endl;
+
+    // cout << "parse pokemon prespecies_id\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    pokemon[i].species_id = temp;
+    // cout << temp << std::endl;
+
+    // cout << "parse pokemon pre height\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    pokemon[i].height = temp;
+    // cout << temp << std::endl;
+
+    // cout << "parse pokemon pre weight\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    // cout << "parse pokemon pre find\n";
+    pos2 = input.find(deliminator);
+    // cout << "parse pokemon pre getNext\n";
+    temp = getNext(input.substr(pos1, pos2), ",");
+    // cout << "parse pokemon pre weight = temp\n";
+    pokemon[i].weight = temp;
+    // cout << "parse pokemon pre print temp\n";
+    // cout << temp << std::endl;
+
+    // cout << "parse pokemon pre base_experience\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    pokemon[i].base_experience = temp;
+    // cout << temp << std::endl;
+
+    // cout << "parse pokemon pre order\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    pokemon[i].order = temp;
+    // cout << temp << std::endl;
+
+    // cout << "parse pokemon pre is_default\n";
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    pokemon[i].is_default = temp;
+    // cout << temp << std::endl;
+  }
+  f.close();
+
+  // cout << "parse pokemon_moves\n";
+  file = base + "pokemon_moves.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "pokemon_move\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 528239; i++) {
+    std::getline(f, input);
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].pokemon_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].version_group_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].move_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].pokemon_move_method_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].level = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_moves[i].order = temp;
+  }
+  f.close();
+
+  // cout << "parse pokemon_species\n";
+  file = base + "pokemon_species.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "pokemon_species\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 899; i++) {
+    std::getline(f, input);
+    string str;
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    str = input.substr(pos1, pos2);
+    poke_species[i].identifier = str;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].generation_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].evolves_from_species_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].evolution_chain_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].color_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].shape_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].habitat_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].gender_rate = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].capture_rate = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].capture_rate = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].base_happiness = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].is_baby = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].hatch_counter = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].has_gender_differences = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].growth_rate_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].forms_switchable = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].is_legendary = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].is_mythical = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].order = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_species[i].conquest_order = temp;
+  }
+  f.close();
+
+  // cout << "parse pokemon_stats\n";
+  file = base + "pokemon_stats.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "pokemon_stats\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 6553; i++) {
+    std::getline(f, input);
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_stats[i].pokemon_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_stats[i].stat_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_stats[i].base_stat = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_stats[i].effort = temp;
+  }
+  f.close();
+
+  // cout << "parse pokemon_types\n";
+  file = base + "pokemon_types.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "pokemon_types\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 1676; i++) {
+    std::getline(f, input);
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_types[i].pokemon_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_types[i].type_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    poke_types[i].slot = temp;
+  }
+  f.close();
+
+  // cout << "parse experience\n";
+  file = base + "experience.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "experience\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 601; i++) {
+    std::getline(f, input);
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    experience[i].growth_rate_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    experience[i].level = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    experience[i].experience = temp;
+  }
+  f.close();
+
+  // cout << "parse type_names\n";
+  file = base + "type_names.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "type_names\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 19; i++) {
+    std::getline(f, input);
+    string str;
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    type_names[i].type_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    type_names[i].local_language_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    str = input.substr(pos1, pos2);
+    type_names[i].name = str;
+
+    if (type_names[i].local_language_id != 9) {
+      i--;
+    }
+  }
+  f.close();
+
+  
+  // cout << "parse moves\n";
+  file = base + "moves.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "moves\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 845; i++) {
+    std::getline(f, input);
+    string str;
+    int temp, pos1 = 0, pos2;
+    // cout << input << std::endl;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    str = input.substr(pos1, pos2);
+    moves[i].identifier = str;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].generation_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].type_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].power = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].pp = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].accuracy = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].priority = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].target_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].damage_class_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].effect_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].effect_chance = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].contest_type_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].contest_effect_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    moves[i].super_contest_effect_id = temp;
+  }
+  f.close();
+
+  // cout << "parse stats\n";
+  file = base + "stats.csv";
+  f.open(file);
+  if (!f.is_open()) {
+    success = 2;
+    // cout << "stats\n";
+  }
+
+  std::getline(f, input);
+  for (int i = 1; i < 845; i++) {
+    std::getline(f, input);
+    string str;
+    int temp, pos1 = 0, pos2;
+
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    stats[i].id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    stats[i].damage_class_id = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    str = input.substr(pos1, pos2);
+    stats[i].identifier = str;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    stats[i].is_battle_only = temp;
+
+    input = input.substr(pos2 + 1, input.size() - 1);
+    pos2 = input.find(deliminator);
+    temp = getNext(input.substr(pos1, pos2), ",");
+    stats[i].game_index = temp;
+  }
+  f.close();
+
+  return success;
+}
+
+string printNext(int i)
+{
+  if (i == INT_MAX)
+  {
+    return "";
+  }
+  return std::to_string(i);
+}
+
+void printFile(char *argv[])
+{
+  string arg = argv[1];
+
+  if (arg == "pokemon")
+  {
+    cout << "id,identifier,species_id,height,weight,base_experience,oder,is_default\n";
+    for (int i = 1; i <= 1092; i++)
+    {
+      cout << printNext(pokemon[i].id) << ",";
+      cout << pokemon[i].identifier << ",";
+      cout << printNext(pokemon[i].species_id) << ",";
+      cout << printNext(pokemon[i].height) << ",";
+      cout << printNext(pokemon[i].weight) << ",";
+      cout << printNext(pokemon[i].base_experience) << ",";
+      cout << printNext(pokemon[i].order) << ",";
+      cout << printNext(pokemon[i].is_default) << "\n";
+    }
+  }
+
+  if (arg == "moves")
+  {
+    cout << "id,identifier,generation_id,type_id,power,pp,accuracy,priority,target_id,damage_class_id,effect_id,effect_chance;,contest_type_id,contest_effect_id,super_contest_effect_id\n";
+    for (int i = 1; i <= 844; i++)
+    {
+      cout << printNext(moves[i].id) << ",";
+      cout << moves[i].identifier << ",";
+      cout << printNext(moves[i].generation_id) << ",";
+      cout << printNext(moves[i].type_id) << ",";
+      cout << printNext(moves[i].power) << ",";
+      cout << printNext(moves[i].pp) << ",";
+      cout << printNext(moves[i].accuracy) << ",";
+      cout << printNext(moves[i].priority) << ",";
+      cout << printNext(moves[i].target_id) << ",";
+      cout << printNext(moves[i].damage_class_id) << ",";
+      cout << printNext(moves[i].effect_id) << ",";
+      cout << printNext(moves[i].effect_chance) << ",";
+      cout << printNext(moves[i].contest_type_id) << ",";
+      cout << printNext(moves[i].contest_effect_id) << ",";
+      cout << printNext(moves[i].super_contest_effect_id) << "\n";
+    }
+  }
+
+  if (arg == "pokemon_moves") {
+    cout << "pokemon_id,version_group_id,move_id,pokemon_move_method_id,level,order\n";
+    for (int i = 1; i <= 528238; i++)
+    {
+      cout << printNext(poke_moves[i].pokemon_id) << ",";
+      cout << printNext(poke_moves[i].version_group_id) << ",";
+      cout << printNext(poke_moves[i].move_id) << ",";
+      cout << printNext(poke_moves[i].pokemon_move_method_id) << ",";
+      cout << printNext(poke_moves[i].level) << ",";
+      cout << printNext(poke_moves[i].order) << "\n";
+    }
+  }
+
+  if (arg == "pokemon_species") {
+    cout << "id,identifier,generation_id,evolves_from_species_id,evolution_chain_id,color_id,shape_id,habitat_id,gender_rate,capture_rate,base_happiness,is_baby,hatch_counter,has_gender_differences,growth_rate_id,forms_switchable,is_legendary,is_mythical,order,conquest_order\n";
+    for (int i = 1; i <= 898; i++)
+    {
+      cout << printNext(poke_species[i].id) << ",";
+      cout << poke_species[i].identifier << ",";
+      cout << printNext(poke_species[i].generation_id) << ",";
+      cout << printNext(poke_species[i].evolves_from_species_id) << ",";
+      cout << printNext(poke_species[i].evolution_chain_id) << ",";
+      cout << printNext(poke_species[i].color_id) << ",";
+      cout << printNext(poke_species[i].shape_id) << ",";
+      cout << printNext(poke_species[i].habitat_id) << ",";
+      cout << printNext(poke_species[i].gender_rate) << ",";
+      cout << printNext(poke_species[i].capture_rate) << ",";
+      cout << printNext(poke_species[i].base_happiness) << ",";
+      cout << printNext(poke_species[i].is_baby) << ",";
+      cout << printNext(poke_species[i].hatch_counter) << ",";
+      cout << printNext(poke_species[i].has_gender_differences) << ",";
+      cout << printNext(poke_species[i].growth_rate_id) << ",";
+      cout << printNext(poke_species[i].forms_switchable) << ",";
+      cout << printNext(poke_species[i].is_legendary) << ",";
+      cout << printNext(poke_species[i].is_mythical) << ",";
+      cout << printNext(poke_species[i].order) << ",";
+      cout << printNext(poke_species[i].conquest_order) << "\n";
+    }
+  }
+
+  if (arg == "experience") {
+    cout << "growth_rate_id,level,experience\n";
+    for (int i = 1; i <= 600; i++)
+    {
+      cout << printNext(experience[i].growth_rate_id) << ",";
+      cout << printNext(experience[i].level) << ",";
+      cout << printNext(experience[i].experience) << "\n";
+    }
+  }
+
+  if (arg == "type_names") {
+    cout << "type_id,local_language_id,name\n";
+    for (int i = 1; i <= 18; i++)
+    {
+      cout << printNext(type_names[i].type_id) << ",";
+      cout << printNext(type_names[i].local_language_id) << ",";
+      cout << type_names[i].name << "\n";
+    }
+  }
+
+  if (arg == "pokemon_stats") {
+    cout << "pokemon_id,stat_id,base_stat,effort\n";
+    for (int i = 1; i <= 6552; i++)
+    {
+      cout << printNext(poke_stats[i].pokemon_id) << ",";
+      cout << printNext(poke_stats[i].stat_id) << ",";
+      cout << printNext(poke_stats[i].base_stat) << ",";
+      cout << printNext(poke_stats[i].effort) << "\n";
+    }
+  }
+
+  if (arg == "stats") {
+    cout << "id,damage_class_id,identifier,is_battle_only,game_index\n";
+    for (int i = 1; i <= 8; i++)
+    {
+      cout << printNext(stats[i].id) << ",";
+      cout << printNext(stats[i].damage_class_id) << ",";
+      cout << stats[i].identifier << ",";
+      cout << printNext(stats[i].is_battle_only) << ",";
+      cout << printNext(stats[i].game_index) << "\n";
+    }
+  }
+
+  if (arg == "pokemon_types") {
+    cout << "pokemon_id,type_id,slot\n";
+    for (int i = 1; i <= 1675; i++)
+    {
+      cout << printNext(poke_types[i].pokemon_id) << ",";
+      cout << printNext(poke_types[i].type_id) << ",";
+      cout << printNext(poke_types[i].slot) << "\n";
+    }
+  }
+}
+
 int main(int argc, char *argv[])
 {
+  // cout << "Start\n";
+  if (parseAll() != 0)
+  {
+    cout << "Some file could not be read..\n";
+  }
+  // cout << "parsed\n";
+
+  printFile(argv);
+  // cout << "done\n";
+
+  // pokemon, 
+  // moves, 
+  // pokemon moves,
+  // pokemon species, 
+  // experience, 
+  // type names, 
+  // pokemon stats, 
+  // stats 
+  // pokemon types
+
+  // std::string file = base + "pokedex/data/csv/pokemon_types.csv";
+  // ifstream f(file); wont work, need an import?
+  // file = base + “pokedex/data/csv/pokemon.csv”;
+  // f.open(file);
+  return 0;
   struct timeval tv;
   uint32_t seed;
   int long_arg;

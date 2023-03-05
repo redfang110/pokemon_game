@@ -1,16 +1,1 @@
-This program generates a map (described below), 
-    randomly places a player character on a road and npc throughout the map,
-    and then generates a movement map for a hiker character and rival character
-
-The program allows you to make various moves, encounter npcs in battle, display a list of npcs, and enter poker marts and poke centers.
-
-This is a program that generates a 401x401 world.
-Each unit of the world is made of 80x21 maps.
-Each map is made up of 
-    (at least 2 regions) small grass (.), 
-    (at least 2 regions) tall grass (:), 
-    forests (or trees) (^), 
-    and mountains (or boulders) (%) with 2 roads going N-S and E-W, 
-    a pokemart, 
-    and a pokecenter. 
-The player can navigate manually by inputting hjklyubn, open npc list with t (close with esc)(Poke-battles are closed with esc), or enter a poke mart/center with < (close with >), or quit by inputting q
+This program parses one of nine files based on the keywords pokemon, moves, pokemon_moves, pokemon_species, experience, type_names, pokemon_stats, stats, pokemon_types
