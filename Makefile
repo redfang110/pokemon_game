@@ -1,14 +1,20 @@
-all: world
+all: poke
 
-world: generate_world.c
-	gcc -Wall -Werror -g generate_world.c -o world
+poke: poke327.o heap.o
+	gcc -lncurses poke327.o heap.o -o poke
+
+poke327.o: poke327.c heap.h
+	gcc -Wall -Werror -g poke327.c -c
+
+heap.o: heap.c heap.h
+	gcc -Wall -Werror -g heap.c -c
 
 tar:
 	cd ..
-	tar cvfz hall_noah.assignment-1.02.tar.gz hall_noah.assignment-1.02
+	tar cvfz hall_noah.assignment-1.05.tar.gz hall_noah.assignment-1.05
 
 run:
-	./world
+	./poke
 
 clean:
-	rm -f world
+	rm -f *.o poke
