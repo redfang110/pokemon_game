@@ -1,4 +1,6 @@
+/*
 Assignment 1.01
+
 09/05/2022: 
 Stated map generation project. 
 Created functions-
@@ -13,6 +15,7 @@ Created functions-
 				Should put paths, pokemart, pokecenter, and maybe random rocks and trees on the map.
         	asigns random x coordinate to pokemart and random y coordinate to pokecenter. 
         	Initializes an array of 4 points where the roads leave the map.
+
 09/06/2022: 
 Added albelian sandpile implementation for region seed growth.
 Got stuck on sandpile implementation (lots of bugs and crashing); restarted with rectangle implementation instead
@@ -24,16 +27,123 @@ Functions
 	void civilize(): FINISHED-	-generates randomized straight roads (N-S and E-W) and 4x4 poke mart and pokecenter 
 	void print_table(): FINISHED-	-prints the map out with a space separating each character
 
+*//*
 Assignment 1.02
+
 09/13/2022
 Created 
 	map struct containing an int terrain[21][80] and 4 ints (1 for each direction of road) 
 	world struct containing a map *maps[401][401], ints for current position, and an int for quit
 	updated all old functions for new implementation
+
 09/14/2022
 Created
 	void menu(): FINISHED -				-takes char input from user (passed from main) and excecutes relevant command
-	void check_direction(): FINISHED -	-takes an array of length 4 and a pointer to the world. It fills the array with location of adjacent exits (/*in the order n, e, s, w*/)
+	void check_direction(): FINISHED -	-takes an array of length 4 and a pointer to the world. It fills the array with location of adjacent exits (in the order n, e, s, w)
 Made lots of implementation changes to void civilize(): to make roads meet in the middle if opposite exit is not the same value, account for the edge of the world, etc.
 Made lots of changes to main.
 Updated map struct to contain and int x, y for where it exists in the world and int d for the probability that buildings spawn within the map.
+
+*//*
+Assignment 1.03
+
+09/19/2022
+Downloadeded Prof 1.02 solution and spent the day trying to understand what was going on
+Problems
+	Not sure what to change about dijstra_map
+Created
+	void dijkstra_map(): IN PROGRESS-	-copy of dijkstra_path changing path to map: this function will fill passed 2d arrays with movement values
+
+09/20/2022-09/24/2022
+Made minimal changes and tried to digest proffesors code
+Problems
+	Failed to digest much
+
+09/25/2022
+Added 4 if statements for kitty corner cases for dijkstras map
+Tried to digest professors code 
+Problems
+	Got lost on what to else change
+
+09/26/2022
+Added && !edge_penalty(p->pos[dim_x], p->pos[dim_y]) to ifirst if in while ((p = heap_remove_min(&h))) && commented out return
+Problems
+	Cannot figure out how to save number map
+	Need to update makefile, professors is very confusing
+Created
+	int game_loop(): IN PROGRESS-		-moved most of main to this to make main cleaner and comment it out easily
+
+09/27/2022
+Created
+	int terrain_cost(): FINISHED-		-takes enum of character and terrain type, does nested switch to return movement value of that caracter type for that terrain type
+
+09/28/2022
+Created
+	void print_dist_map(): FINSIHED-	-takes a character enum and prints the associated movement map
+	void place_player(): FINISHED-		-randomly places PC somewhere on a road
+Removed
+	&& !edge_penalty(p->pos[dim_x], p->pos[dim_y]) to ifirst if in while ((p = heap_remove_min(&h))) && commented out return
+Updated
+	void print_map(): UPDATE-			-	ADDED an if to print PC (else switch)
+	struct world{}: UPDATE-				-	ADDED PC pair_t, 2d int array for hiker and rival maps
+	int main(): UPDATE-					-	UPDATED to call dijkstra_map() and 
+												send user into game_loop() after printing distance maps
+	void dijkstra_map(): FINISHED-		-	ADDED if else to set INT_MAX nodes to NULL
+											ADDED switch (character enum) to put map in proper character map
+												(uses nested for loops to copy path into correct 
+												character distance map within world)
+												(if edge case sets value to INT_MAX if it is an edge)
+											REMOVED all calls to edge_penalty()
+											REMOVED "from" from function 
+											REMOVED killswitch if within while (the one with the return)
+											UPDATED changed directional if conditions
+												(changed to ... && cost > cost + terrain_cost() of current position)
+											UPDATED changed what I set the cost to
+												(cost = cost + terrain_cost() of current position)
+											UPDATED changed 0 initialization from "from" to "to"
+												(this means we are calculating distance from PC 
+												instead of from where the path started)
+											UPDATED nested for loop to go from 0-MAP											
+*/
+Assignment 1.04
+
+10/03/2022
+Downloaded assignment 1.03 solution and tried to familiarize with new code
+
+10/04/2022
+Created
+	heap_t turn_queue:	FINISHED-			-	Global heap_t
+	struct character_node_t: FINISHED-		-	contains character_type_t type, pair_t pos, int turn, int sequence;
+	void init_npcs(): FINISHED-				-	Parameters: none
+													randomly places passed number of NPCs in world.char_map and calls void character_insert()
+													(ensures at least one hiker and rival unless passed number < 2)
+	int char_placable(): FINISHED-			-	Parameters: (int x, int y, character_type_t character)
+													if character is not allowed in [y][x], return 0; else return 1;
+	static void print_char(): FINISHED-		-	putchar(c) where c is the char relating to the passed character_type_t
+	void character_insert(): FINISHED-		-	Parameters: (character_type_t type, int x, int y, int turn, int sequence, char direction)
+													inserts a character_node_t filled with passed information into turn_queue
+	char find_direction(): FINISHED-		-	Parameters: (character_type_t type)
+													returns a random character (n, e, s, w) if the character type has a direction 
+													(otherwise, returns NULLL)
+Updated
+	struct world_t: UPDATE-					-	ADDED character_type_t char_map[MAP_Y][MAP_X];
+	void init_pc(): UPDATE-					-	ADDED call to void character_insert()
+	int main(): UPDATE-						-	ADDED two switches "--numtrainers" and "--seed" both take a numerical value after the switch
+												UPDATED to do 1.04 stuff instead of 1.03 stuff
+	void print_map(): UPDATE-				-	UPDATED to print character instead of terrain if coordinate is not char_null in world.char_map
+	enum character_type_t: UPDATE-			-	UPDATED to char_pc, char_hiker, char_rival, char_pacer, char_wanderer, 
+													char_sentry, char_explorer, num_character_types, char_null
+
+10/05/2022
+Created
+	int current_turn: FINISHED-				-	Global int
+	void update_turn(): FINISHED-			-	Parameters: none
+													dequeues the character whose turn it is, updates position and turn, then requeues
+	void game_loop(): FINISHED-				-	Parameters: none
+													Copy/pasted from cluttering main logic (unused game loop from previous assignment)
+	pair_t *next_pos(): FINISHED-			-	Parameters: (character_type_t type, char direction, int x, int y)
+													returns a pointer (array) of the next position the character will move to
+
+Updated
+	int main():	UPDATE-						-	REMOVED cluttering main logic (unused game loop from previous assignment)
+														(moved logic to game_loop())
