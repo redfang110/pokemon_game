@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <assert.h>
 #include <unistd.h>
+#include <ncurses.h>
 
 #include "heap.h"
 
@@ -39,6 +40,8 @@ typedef int16_t pair_t[num_dims];
 #define TREE_PROB          95
 #define BOULDER_PROB       95
 #define WORLD_SIZE         401
+#define MIN_TRAINERS       7   
+#define ADD_TRAINER_PROB   60
 
 #define mappair(pair) (m->map[pair[dim_y]][pair[dim_x]])
 #define mapxy(x, y) (m->map[y][x])
@@ -59,39 +62,58 @@ typedef enum __attribute__ ((__packed__)) terrain_type {
   num_terrain_types
 } terrain_type_t;
 
+typedef enum __attribute__ ((__packed__)) movement_type {
+  move_hiker,
+  move_rival,
+  move_pace,
+  move_wander,
+  move_sentry,
+  move_explore,
+  move_pc,
+  num_movement_types
+} movement_type_t;
+
 typedef enum __attribute__ ((__packed__)) character_type {
   char_pc,
   char_hiker,
   char_rival,
-  char_pacer,
-  char_wanderer,
-  char_sentry,
-  char_explorer,
-  num_character_types,
-  char_null
+  char_other,
+  num_character_types
 } character_type_t;
 
-typedef enum __attribute__ ((__packed__)) directions { 
-  north,
-  northeast,
-  east,
-  southeast,
-  south,
-  southwest,
-  west,
-  northwest,
-  num_directions,
-  no_direction
-} directions_t;
+int32_t move_cost[num_character_types][num_terrain_types] = {
+  { INT_MAX, INT_MAX, 10, 10, 10, 20, 10, INT_MAX, INT_MAX, 10      },
+  { INT_MAX, INT_MAX, 10, 50, 50, 15, 10, 15,      15,      INT_MAX },
+  { INT_MAX, INT_MAX, 10, 50, 50, 20, 10, INT_MAX, INT_MAX, INT_MAX },
+  { INT_MAX, INT_MAX, 10, 50, 50, 20, 10, INT_MAX, INT_MAX, INT_MAX },
+};
 
 typedef struct pc {
-  pair_t pos;
+  int quit;
 } pc_t;
+
+typedef struct npc {
+  character_type_t ctype;
+  movement_type_t mtype;
+  pair_t dir;
+  int defeated;
+} npc_t;
+
+typedef struct character {
+  npc_t *npc;
+  pc_t *pc;
+  pair_t pos;
+  char symbol;
+  int next_turn;
+} character_t;
 
 typedef struct map {
   terrain_type_t map[MAP_Y][MAP_X];
   uint8_t height[MAP_Y][MAP_X];
+  character_t *cmap[MAP_Y][MAP_X];
+  heap_t turn;
   int8_t n, s, e, w;
+  int num_trainers;
 } map_t;
 
 typedef struct queue_node {
@@ -99,40 +121,374 @@ typedef struct queue_node {
   struct queue_node *next;
 } queue_node_t;
 
-typedef struct character_node {
-  heap_node_t *hn;
-  character_type_t type;
-  int pos[num_dims];
-  int turn;
-  int sequence;
-  //direction of travel
-  directions_t dir;
-} character_node_t;
-
 typedef struct world {
   map_t *world[WORLD_SIZE][WORLD_SIZE];
   pair_t cur_idx;
   map_t *cur_map;
-  character_type_t char_map[MAP_Y][MAP_X];
   /* Please distance maps in world, not map, since *
    * we only need one pair at any given time.      */
   int hiker_dist[MAP_Y][MAP_X];
   int rival_dist[MAP_Y][MAP_X];
-  pc_t pc;
+  character_t pc;
 } world_t;
 
 /* Even unallocated, a WORLD_SIZE x WORLD_SIZE array of pointers is a very *
  * large thing to put on the stack.  To avoid that, world is a global.     */
 world_t world;
-heap_t turn_queue;
-// character_node_t *real_queue;
-// int queue_size;
+WINDOW *game;
 
-int32_t move_cost[num_character_types][num_terrain_types] = {
-  { INT_MAX, INT_MAX, 10, 10, 10, 20, 10, INT_MAX, INT_MAX, 10      },
-  { INT_MAX, INT_MAX, 10, 50, 50, 15, 10, 15,      15,      INT_MAX },
-  { INT_MAX, INT_MAX, 10, 50, 50, 20, 10, INT_MAX, INT_MAX, INT_MAX },
-  { INT_MAX, INT_MAX, 10, 50, 50, 20, 10, INT_MAX, INT_MAX, INT_MAX },
+
+static pair_t all_dirs[8] = {
+  { -1, -1 },
+  { -1,  0 },
+  { -1,  1 },
+  {  0, -1 },
+  {  0,  1 },
+  {  1, -1 },
+  {  1,  0 },
+  {  1,  1 },
+};
+
+#define rand_dir(dir) {     \
+  int _i = rand() & 0x7;    \
+  dir[0] = all_dirs[_i][0]; \
+  dir[1] = all_dirs[_i][1]; \
+}
+
+void trainer_list();
+void poke_battle(character_t *c);
+
+static void move_hiker_func(character_t *c, pair_t dest)
+{
+  int min;
+  int base;
+  int i;
+  
+  base = rand() & 0x7;
+
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  if(c->npc->defeated) {
+    return;
+  }
+
+  min = INT_MAX;
+  
+  for (i = base; i < 8 + base; i++) {
+    if ((world.hiker_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                         [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] <= min) &&
+                          c->pos[dim_x] + all_dirs[i & 0x7][dim_x] != 0 &&
+                          c->pos[dim_x] + all_dirs[i & 0x7][dim_x] != MAP_X - 1 &&
+                          c->pos[dim_y] + all_dirs[i & 0x7][dim_y] != 0 &&
+                          c->pos[dim_y] + all_dirs[i & 0x7][dim_y] != MAP_Y - 1) {
+      if (!world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                              [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
+        dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
+        dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
+        min = world.hiker_dist[dest[dim_y]][dest[dim_x]];
+      } else if (world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                                    [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]->pc) {
+        poke_battle(c);
+      }
+    }
+  }
+}
+
+static void move_rival_func(character_t *c, pair_t dest)
+{
+  int min;
+  int base;
+  int i;
+  
+  base = rand() & 0x7;
+
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  if(c->npc->defeated) {
+    return;
+  }
+
+  min = INT_MAX;
+  
+  for (i = base; i < 8 + base; i++) {
+    if ((world.rival_dist[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                         [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]] < min) &&
+                          c->pos[dim_x] + all_dirs[i & 0x7][dim_x] != 0 &&
+                          c->pos[dim_x] + all_dirs[i & 0x7][dim_x] != MAP_X - 1 &&
+                          c->pos[dim_y] + all_dirs[i & 0x7][dim_y] != 0 &&
+                          c->pos[dim_y] + all_dirs[i & 0x7][dim_y] != MAP_Y - 1) {
+      if (!world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                            [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]) {
+        dest[dim_x] = c->pos[dim_x] + all_dirs[i & 0x7][dim_x];
+        dest[dim_y] = c->pos[dim_y] + all_dirs[i & 0x7][dim_y];
+        min = world.rival_dist[dest[dim_y]][dest[dim_x]];
+      } else if (world.cur_map->cmap[c->pos[dim_y] + all_dirs[i & 0x7][dim_y]]
+                                    [c->pos[dim_x] + all_dirs[i & 0x7][dim_x]]->pc) {
+        poke_battle(c);
+      }
+    }
+  }
+}
+
+static void move_pacer_func(character_t *c, pair_t dest)
+{
+  terrain_type_t t;
+  
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  t = world.cur_map->map[c->pos[dim_y] + c->npc->dir[dim_y]]
+                        [c->pos[dim_x] + c->npc->dir[dim_x]];
+
+  if (t == ter_path || t == ter_grass || t == ter_clearing) {
+    if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]) {
+      if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]->pc && !c->npc->defeated) {
+        poke_battle(c);
+      } else {
+        c->npc->dir[dim_x] *= -1;
+        c->npc->dir[dim_y] *= -1;
+      }
+    } else {
+      dest[dim_x] = c->pos[dim_x] + c->npc->dir[dim_x];
+      dest[dim_y] = c->pos[dim_y] + c->npc->dir[dim_y];
+    }
+  } else {
+    c->npc->dir[dim_x] *= -1;
+    c->npc->dir[dim_y] *= -1;
+  }
+}
+
+static void move_wanderer_func(character_t *c, pair_t dest)
+{
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  if ((world.cur_map->map[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]) == (world.cur_map->map[c->pos[dim_y]][c->pos[dim_x]])) {
+    if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]) {
+      if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]->pc && !c->npc->defeated) {
+        poke_battle(c);
+      } else {
+        rand_dir(c->npc->dir);
+      }
+    } else {
+      dest[dim_x] = c->pos[dim_x] + c->npc->dir[dim_x];
+      dest[dim_y] = c->pos[dim_y] + c->npc->dir[dim_y];
+    }
+  } else {
+    rand_dir(c->npc->dir);
+  }
+}
+
+static void move_sentry_func(character_t *c, pair_t dest)
+{
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+}
+
+static void move_explorer_func(character_t *c, pair_t dest)
+{
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  if (move_cost[char_other][world.cur_map->map[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]] != INT_MAX) {
+    if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]) {
+      if (world.cur_map->cmap[c->pos[dim_y] + c->npc->dir[dim_y]][c->pos[dim_x] + c->npc->dir[dim_x]]->pc && !c->npc->defeated) {
+        poke_battle(c);
+      } else {
+        rand_dir(c->npc->dir);
+      }
+    } else {
+      dest[dim_x] = c->pos[dim_x] + c->npc->dir[dim_x];
+      dest[dim_y] = c->pos[dim_y] + c->npc->dir[dim_y];
+    }
+  } else {
+    rand_dir(c->npc->dir);
+  }
+}
+
+static void move_pc_func(character_t *c, pair_t dest)
+{
+  WINDOW *win;
+  // char input;
+  dest[dim_x] = c->pos[dim_x];
+  dest[dim_y] = c->pos[dim_y];
+
+  // input = getch();
+  switch (getch())
+  {
+  case '2':
+  case 'j':
+    //move up
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] + 1][c->pos[dim_x]]] != INT_MAX) && 
+                                          !(c->pos[dim_y] + 1 == 0 || c->pos[dim_y] + 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] == 0 || c->pos[dim_x] == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x]]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x]]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x]]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x];
+        dest[dim_y] = c->pos[dim_y] + 1;
+      }
+    }
+    break;
+  case '8':
+  case 'k':
+    //move down
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] - 1][c->pos[dim_x]]] != INT_MAX) &&
+                                          !(c->pos[dim_y] - 1 == 0 || c->pos[dim_y] - 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] == 0 || c->pos[dim_x] == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x]]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x]]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x]]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x];
+        dest[dim_y] = c->pos[dim_y] - 1;
+      }
+    }
+    break;
+  case '4':
+  case 'h':
+    //move left
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y]][c->pos[dim_x] - 1]] != INT_MAX) &&
+                                          !(c->pos[dim_y] == 0 || c->pos[dim_y] == MAP_Y) &&
+                                          !(c->pos[dim_x] - 1 == 0 || c->pos[dim_x] - 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] - 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] - 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] - 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] - 1;
+        dest[dim_y] = c->pos[dim_y];
+      }
+    }
+    break;
+  case '6':
+  case 'l':
+    //move right
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y]][c->pos[dim_x] + 1]] != INT_MAX) && 
+                                          !(c->pos[dim_y] == 0 || c->pos[dim_y] == MAP_Y) &&
+                                          !(c->pos[dim_x] + 1 == 0 || c->pos[dim_x] + 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] + 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] + 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x] + 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] + 1;
+        dest[dim_y] = c->pos[dim_y];
+      }
+    }
+    break;
+  case '7':
+  case 'y':
+    //move upper left
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] - 1][c->pos[dim_x] - 1]] != INT_MAX) && 
+                                          !(c->pos[dim_y] - 1 == 0 || c->pos[dim_y] - 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] - 1 == 0 || c->pos[dim_x] - 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] - 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] - 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] - 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] - 1;
+        dest[dim_y] = c->pos[dim_y] - 1;
+      }
+    }
+    break;
+  case '9':
+  case 'u':
+    //move upper right
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] - 1][c->pos[dim_x] + 1]] != INT_MAX) && 
+                                          !(c->pos[dim_y] - 1 == 0 || c->pos[dim_y] - 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] + 1 == 0 || c->pos[dim_x] + 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] + 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] + 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] + 1][c->pos[dim_x] + 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] + 1;
+        dest[dim_y] = c->pos[dim_y] - 1;
+      }
+    }
+    break;
+  case '1':
+  case 'b':
+    //move lower left
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] + 1][c->pos[dim_x] - 1]] != INT_MAX) && 
+                                          !(c->pos[dim_y] + 1 == 0 || c->pos[dim_y] + 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] - 1 == 0 || c->pos[dim_x] - 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] - 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] - 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] - 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] - 1;
+        dest[dim_y] = c->pos[dim_y] + 1;
+      }
+    }
+    break;
+  case '3':
+  case 'n':
+    //move lower right
+    if((move_cost[char_pc][world.cur_map->map[c->pos[dim_y] + 1][c->pos[dim_x] + 1]] != INT_MAX) && 
+                                          !(c->pos[dim_y] + 1 == 0 || c->pos[dim_y] + 1 == MAP_Y) &&
+                                          !(c->pos[dim_x] + 1 == 0 || c->pos[dim_x] + 1 == MAP_X)) {
+      if (world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] + 1]) {
+        if (!world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] + 1]->npc->defeated) {
+          poke_battle(world.cur_map->cmap[c->pos[dim_y] - 1][c->pos[dim_x] + 1]);
+        }
+      } else {
+        dest[dim_x] = c->pos[dim_x] + 1;
+        dest[dim_y] = c->pos[dim_y] + 1;
+      }
+    }
+    break;
+  case '5':
+  case '.':
+  case ' ':
+    //rest
+    dest[dim_x] = c->pos[dim_x];
+    dest[dim_y] = c->pos[dim_y];
+    break;
+  case '>':
+    //Enter pokemart or pokecenter
+    win = newwin(3, 35, 10, 10);
+    box(win, 0, 0);
+    mvwprintw(win, 1, 1, "Enter < to exit poke mart/center");
+    refresh();
+    wrefresh(win);
+    while(wgetch(win) != '<') {
+    }
+    wrefresh(win);
+    touchwin(game);
+    refresh();
+    break;
+  case 't':
+    //display list of trainers on the map
+    trainer_list();
+    break;
+  case 'Q':
+  case 'q':
+    //quit
+    world.pc.pc->quit = 1;
+    break;
+  default:
+    break;
+  }
+
+}
+
+void (*move_func[num_movement_types])(character_t *, pair_t) = {
+  move_hiker_func,
+  move_rival_func,
+  move_pacer_func,
+  move_wanderer_func,
+  move_sentry_func,
+  move_explorer_func,
+  move_pc_func,
 };
 
 static int32_t path_cmp(const void *key, const void *with) {
@@ -768,179 +1124,165 @@ static int place_trees(map_t *m)
   return 0;
 }
 
-// New map expects cur_idx to refer to the index to be generated.  If that
-// map has already been generated then the only thing this does is set
-// cur_map.
-static int new_map()
+void rand_pos(pair_t pos)
 {
-  int d, p;
-  int e, w, n, s;
-
-  if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]]) {
-    world.cur_map = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]];
-    return 0;
-  }
-
-  world.cur_map                                             =
-    world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]] =
-    malloc(sizeof (*world.cur_map));
-
-  smooth_height(world.cur_map);
-  
-  if (!world.cur_idx[dim_y]) {
-    n = -1;
-  } else if (world.world[world.cur_idx[dim_y] - 1][world.cur_idx[dim_x]]) {
-    n = world.world[world.cur_idx[dim_y] - 1][world.cur_idx[dim_x]]->s;
-  } else {
-    n = 1 + rand() % (MAP_X - 2);
-  }
-  if (world.cur_idx[dim_y] == WORLD_SIZE - 1) {
-    s = -1;
-  } else if (world.world[world.cur_idx[dim_y] + 1][world.cur_idx[dim_x]]) {
-    s = world.world[world.cur_idx[dim_y] + 1][world.cur_idx[dim_x]]->n;
-  } else  {
-    s = 1 + rand() % (MAP_X - 2);
-  }
-  if (!world.cur_idx[dim_x]) {
-    w = -1;
-  } else if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] - 1]) {
-    w = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] - 1]->e;
-  } else {
-    w = 1 + rand() % (MAP_Y - 2);
-  }
-  if (world.cur_idx[dim_x] == WORLD_SIZE - 1) {
-    e = -1;
-  } else if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] + 1]) {
-    e = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] + 1]->w;
-  } else {
-    e = 1 + rand() % (MAP_Y - 2);
-  }
-  
-  map_terrain(world.cur_map, n, s, e, w);
-     
-  place_boulders(world.cur_map);
-  place_trees(world.cur_map);
-  build_paths(world.cur_map);
-  d = (abs(world.cur_idx[dim_x] - (WORLD_SIZE / 2)) +
-       abs(world.cur_idx[dim_y] - (WORLD_SIZE / 2)));
-  p = d > 200 ? 5 : (50 - ((45 * d) / 200));
-  //  printf("d=%d, p=%d\n", d, p);
-  if ((rand() % 100) < p || !d) {
-    place_pokemart(world.cur_map);
-  }
-  if ((rand() % 100) < p || !d) {
-    place_center(world.cur_map);
-  }
-
-  return 0;
+  pos[dim_x] = (rand() % (MAP_X - 2)) + 1;
+  pos[dim_y] = (rand() % (MAP_Y - 2)) + 1;
 }
 
-static void print_char(character_type_t character)
+void new_hiker()
 {
-  switch (character)
-  {
-  case char_pc:
-    putchar('@');
-    break;
-  case char_hiker:
-    putchar('h');
-    break;
-  case char_rival:
-    putchar('r');
-    break;
-  case char_pacer:
-    putchar('p');
-    break;
-  case char_wanderer:
-    putchar('w');
-    break;
-  case char_sentry:
-    putchar('s');
-    break;
-  case char_explorer:
-  default:
-    putchar('e');
-    break;
-  }
+  pair_t pos;
+  character_t *c;
+
+  do {
+    rand_pos(pos);
+  } while (world.hiker_dist[pos[dim_y]][pos[dim_x]] == INT_MAX ||
+           world.cur_map->cmap[pos[dim_y]][pos[dim_x]]);
+
+  c = malloc(sizeof (*c));
+  c->npc = malloc(sizeof (*c->npc));
+  c->pos[dim_y] = pos[dim_y];
+  c->pos[dim_x] = pos[dim_x];
+  c->npc->ctype = char_hiker;
+  c->npc->mtype = move_hiker;
+  c->npc->dir[dim_x] = 0;
+  c->npc->dir[dim_y] = 0;
+  c->npc->defeated = 0;
+  c->symbol = 'h';
+  c->next_turn = 0;
+  heap_insert(&world.cur_map->turn, c);
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c;
+
+  printf("Hiker at %d,%d\n", pos[dim_x], pos[dim_y]);
 }
 
-static void print_map()
+void new_rival()
 {
-  int x, y;
-  int default_reached = 0;
+  pair_t pos;
+  character_t *c;
 
-  printf("\n\n\n");
+  do {
+    rand_pos(pos);
+  } while (world.rival_dist[pos[dim_y]][pos[dim_x]] == INT_MAX ||
+           world.rival_dist[pos[dim_y]][pos[dim_x]] < 0        ||
+           world.cur_map->cmap[pos[dim_y]][pos[dim_x]]);
 
-  for (y = 0; y < MAP_Y; y++) {
-    for (x = 0; x < MAP_X; x++) {
-      if (world.char_map[y][x] != char_null) {
-        print_char(world.char_map[y][x]);
-      } else {
-        switch (world.cur_map->map[y][x]) {
-        case ter_boulder:
-          putchar('0');
-          break;
-        case ter_mountain:
-          putchar('%');
-          break;
-        case ter_tree:
-          putchar('4');
-          break;
-        case ter_forest:
-          putchar('^');
-          break;
-        case ter_path:
-          putchar('#');
-          break;
-        case ter_mart:
-          putchar('M');
-          break;
-        case ter_center:
-          putchar('C');
-          break;
-        case ter_grass:
-          putchar(':');
-          break;
-        case ter_clearing:
-          putchar('.');
-          break;
-        case ter_exit:
-          putchar('#');
-          break;
-        default:
-          default_reached = 1;
-          break;
-        }
-      }
+  c = malloc(sizeof (*c));
+  c->npc = malloc(sizeof (*c->npc));
+  c->pos[dim_y] = pos[dim_y];
+  c->pos[dim_x] = pos[dim_x];
+  c->npc->ctype = char_rival;
+  c->npc->mtype = move_rival;
+  c->npc->dir[dim_x] = 0;
+  c->npc->dir[dim_y] = 0;
+  c->npc->defeated = 0;
+  c->symbol = 'r';
+  c->next_turn = 0;
+  heap_insert(&world.cur_map->turn, c);
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c;
+}
+
+void new_char_other()
+{
+  pair_t pos;
+  character_t *c;
+
+  do {
+    rand_pos(pos);
+  } while (world.rival_dist[pos[dim_y]][pos[dim_x]] == INT_MAX ||
+           world.rival_dist[pos[dim_y]][pos[dim_x]] < 0        ||
+           world.cur_map->cmap[pos[dim_y]][pos[dim_x]]);
+
+  c = malloc(sizeof (*c));
+  c->npc = malloc(sizeof (*c->npc));
+  c->pos[dim_y] = pos[dim_y];
+  c->pos[dim_x] = pos[dim_x];
+  c->npc->ctype = char_other;
+  c->npc->defeated = 0;
+  switch (rand() % 4) {
+  case 0:
+    c->npc->mtype = move_pace;
+    c->symbol = 'p';
+    break;
+  case 1:
+    c->npc->mtype = move_wander;
+    c->symbol = 'w';
+    break;
+  case 2:
+    c->npc->mtype = move_sentry;
+    c->symbol = 's';
+    break;
+  case 3:
+    c->npc->mtype = move_explore;
+    c->symbol = 'e';
+    break;
+  }
+  rand_dir(c->npc->dir);
+  c->next_turn = 0;
+  heap_insert(&world.cur_map->turn, c);
+  world.cur_map->cmap[pos[dim_y]][pos[dim_x]] = c;
+}
+
+void place_characters()
+{
+  int num_trainers = 2;
+
+  //Always place a hiker and a rival, then place a random number of others
+  new_hiker();
+  new_rival();
+  do {
+    //higher probability of non- hikers and rivals
+    switch(rand() % 10) {
+    case 0:
+      new_hiker();
+      break;
+    case 1:
+     new_rival();
+      break;
+    default:
+      new_char_other();
+      break;
     }
-    putchar('\n');
-  }
-
-  if (default_reached) {
-    fprintf(stderr, "Default reached in %s\n", __FUNCTION__);
-  }
+  } while (++num_trainers < MIN_TRAINERS ||
+           ((rand() % 100) < ADD_TRAINER_PROB));
+  world.cur_map->num_trainers = num_trainers;
 }
 
-// The world is global because of its size, so init_world is parameterless
-void init_world()
+int32_t cmp_char_turns(const void *key, const void *with)
 {
-  world.cur_idx[dim_x] = world.cur_idx[dim_y] = WORLD_SIZE / 2;
-
-  new_map();
+  return ((character_t *) key)->next_turn - ((character_t *) with)->next_turn;
 }
 
-void delete_world()
+void delete_character(void *v)
+{
+  if (v == &world.pc) {
+    free(world.pc.pc);
+  } else {
+    free(((character_t *) v)->npc);
+    free(v);
+  }
+}
+
+void init_pc()
 {
   int x, y;
 
-  for (y = 0; y < WORLD_SIZE; y++) {
-    for (x = 0; x < WORLD_SIZE; x++) {
-      if (world.world[y][x]) {
-        free(world.world[y][x]);
-        world.world[y][x] = NULL;
-      }
-    }
-  }
+  do {
+    x = rand() % (MAP_X - 2) + 1;
+    y = rand() % (MAP_Y - 2) + 1;
+  } while (world.cur_map->map[y][x] != ter_path);
+
+  world.pc.pos[dim_x] = x;
+  world.pc.pos[dim_y] = y;
+  world.pc.symbol = '@';
+  world.pc.pc = malloc(sizeof (*world.pc.pc));
+  world.pc.pc->quit = 0;
+
+  world.cur_map->cmap[y][x] = &world.pc;
+  world.pc.next_turn = 0;
+
+  heap_insert(&world.cur_map->turn, &world.pc);
 }
 
 #define ter_cost(x, y, c) move_cost[c][m->map[y][x]]
@@ -1179,243 +1521,177 @@ void pathfind(map_t *m)
   heap_delete(&h);
 }
 
-void print_character(character_node_t *c)
+// New map expects cur_idx to refer to the index to be generated.  If that
+// map has already been generated then the only thing this does is set
+// cur_map.
+static int new_map()
 {
-  printf("\n\ntype: ");
-  switch (c->type)
-      {
-        case char_pc:
-          putchar('@');
-          break;
-        case char_hiker:
-          putchar('h');
-          break;
-        case char_rival:
-          putchar('r');
-          break;
-        case char_pacer:
-          putchar('p');
-          break;
-        case char_wanderer:
-          putchar('w');
-          break;
-        case char_sentry:
-          putchar('s');
-          break;
-        case char_explorer:
-          putchar('e');
-          break;
-        default:
-          putchar('0');
-          break;
-      }
-  printf("\npos[x]: %d \npos[y]: %d \nturn: %d \nsequence: %d \n", c->pos[dim_x], c->pos[dim_y], c->turn, c->sequence);
-
-  switch(c->dir) {
-          case north:
-            printf("dir: north\n\n");
-            break;
-          case northeast:
-            printf("dir: northeast\n\n");
-            break;
-          case east:
-            printf("dir: east\n\n");
-            break;
-          case southeast:
-            printf("dir: southeast\n\n");
-            break;
-          case south:
-            printf("dir: south\n\n");
-            break;
-          case southwest:
-           printf("dir: southwest\n\n");
-            break;
-          case west:
-            printf("dir: west\n\n");
-            break;
-          case northwest:
-            printf("dir: northwest\n\n");
-            break;
-          default:
-            printf("dir: no_direction\n\n");
-            break;
-        }
-}
-
-int char_placable(int x, int y, character_type_t character)
-{
-  if(world.char_map[y][x] != char_null) {
+  int d, p;
+  int e, w, n, s;
+  int x, y;
+  
+  if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]]) {
+    world.cur_map = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]];
     return 0;
   }
 
-  switch (character)
-  {
-  case char_hiker:
-    if (world.cur_map->map[y][x] == ter_boulder || world.cur_map->map[y][x] == ter_tree) {
-      return 0;
-    }
-    return 1;
-    break;
-  default:
-    if (world.cur_map->map[y][x] == ter_boulder || world.cur_map->map[y][x] == ter_mountain) {
-      return 0;
-    }
-    if (world.cur_map->map[y][x] == ter_tree || world.cur_map->map[y][x] == ter_forest) {
-      return 0;
-    }
-    return 1;
-    break;
+  world.cur_map                                             =
+    world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x]] =
+    malloc(sizeof (*world.cur_map));
+
+  smooth_height(world.cur_map);
+  
+  if (!world.cur_idx[dim_y]) {
+    n = -1;
+  } else if (world.world[world.cur_idx[dim_y] - 1][world.cur_idx[dim_x]]) {
+    n = world.world[world.cur_idx[dim_y] - 1][world.cur_idx[dim_x]]->s;
+  } else {
+    n = 1 + rand() % (MAP_X - 2);
   }
-}
-
-void character_insert(character_type_t type, int x, int y, int turn, int sequence, directions_t direction)
-{
-  character_node_t *character = malloc(sizeof(character_node_t)); 
-
-  character->type = type;
-  character->pos[dim_x] = x;
-  character->pos[dim_y] = y;
-  character->turn = turn;
-  character->sequence = sequence;
-  character->dir = direction;
-
-  // real_queue[sequence] = *character;
-  character->hn = heap_insert(&turn_queue, character);
-}
-
-directions_t find_direction(character_type_t type)
-{
-  directions_t dir = (rand() % 8);
-
-  switch (type)
-  {
-    case char_pacer:
-    case char_wanderer:
-    case char_explorer:
-      return dir;
-      break;
-    case char_pc:
-    case char_hiker:
-    case char_rival:
-    case char_sentry:
-    default:
-      return no_direction;
-      break;
+  if (world.cur_idx[dim_y] == WORLD_SIZE - 1) {
+    s = -1;
+  } else if (world.world[world.cur_idx[dim_y] + 1][world.cur_idx[dim_x]]) {
+    s = world.world[world.cur_idx[dim_y] + 1][world.cur_idx[dim_x]]->n;
+  } else  {
+    s = 1 + rand() % (MAP_X - 2);
   }
-}
-
-void init_pc()
-{
-  int x, y;
+  if (!world.cur_idx[dim_x]) {
+    w = -1;
+  } else if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] - 1]) {
+    w = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] - 1]->e;
+  } else {
+    w = 1 + rand() % (MAP_Y - 2);
+  }
+  if (world.cur_idx[dim_x] == WORLD_SIZE - 1) {
+    e = -1;
+  } else if (world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] + 1]) {
+    e = world.world[world.cur_idx[dim_y]][world.cur_idx[dim_x] + 1]->w;
+  } else {
+    e = 1 + rand() % (MAP_Y - 2);
+  }
+  
+  map_terrain(world.cur_map, n, s, e, w);
+     
+  place_boulders(world.cur_map);
+  place_trees(world.cur_map);
+  build_paths(world.cur_map);
+  d = (abs(world.cur_idx[dim_x] - (WORLD_SIZE / 2)) +
+       abs(world.cur_idx[dim_y] - (WORLD_SIZE / 2)));
+  p = d > 200 ? 5 : (50 - ((45 * d) / 200));
+  //  printf("d=%d, p=%d\n", d, p);
+  if ((rand() % 100) < p || !d) {
+    place_pokemart(world.cur_map);
+  }
+  if ((rand() % 100) < p || !d) {
+    place_center(world.cur_map);
+  }
 
   for (y = 0; y < MAP_Y; y++) {
     for (x = 0; x < MAP_X; x++) {
-      world.char_map[y][x] = char_null;
+      world.cur_map->cmap[y][x] = NULL;
     }
   }
 
-  do {
-    x = rand() % (MAP_X - 2) + 1;
-    y = rand() % (MAP_Y - 2) + 1;
-  } while (world.cur_map->map[y][x] != ter_path);
+  heap_init(&world.cur_map->turn, cmp_char_turns, delete_character);
 
-  world.pc.pos[dim_x] = x;
-  world.pc.pos[dim_y] = y;
-  world.char_map[y][x] = char_pc;
+  init_pc();
+  pathfind(world.cur_map);
+  place_characters();
 
-  character_insert(char_pc, x, y, 0, 0, no_direction);
+  return 0;
 }
 
-void init_npcs(int num)
+static void print_map()
 {
-  int y, x, i;
-  character_type_t temp;
-  character_node_t *c = malloc(sizeof(character_node_t));
+  int x, y;
+  int default_reached = 0;
 
-  switch (num)
-  {
-  case 0:
-    return;
-    break;
-  case 1:
-    temp = rand() % (2) + 1;
-    do {
-      x = rand() % (MAP_X - 2) + 1;
-      y = rand() % (MAP_Y - 2) + 1;
-    } while (!char_placable(x, y, temp));
-    world.char_map[y][x] = temp;
-    character_insert(temp, x, y, 0, 1, no_direction);
+  clear();
+  printw("\n");
 
-    printf("\n\t--init npc--");
-    c->type = temp;
-    c->pos[dim_x] = x;
-    c->pos[dim_y] = y;
-    c->turn = 0;
-    c->sequence = 1;
-    c->dir = no_direction;
-    print_character(c);
-
-    break;
-  default:
-    //place hiker
-    temp = char_hiker;
-    do {
-      x = rand() % (MAP_X - 2) + 1;
-      y = rand() % (MAP_Y - 2) + 1;
-    } while (!char_placable(x, y, temp));
-    world.char_map[y][x] = temp;
-    character_insert(temp, x, y, 0, 1, no_direction);
-
-    printf("\n\t--init npc--");
-    c->type = temp;
-    c->pos[dim_x] = x;
-    c->pos[dim_y] = y;
-    c->turn = 0;
-    c->sequence = 1;
-    c->dir = no_direction;
-    print_character(c);
-
-    //place rival
-    temp = char_rival;
-    do {
-      x = rand() % (MAP_X - 2) + 1;
-      y = rand() % (MAP_Y - 2) + 1;
-    } while (!char_placable(x, y, temp));
-    world.char_map[y][x] = temp;
-    character_insert(temp, x, y, 0, 2, no_direction);
-
-    printf("\n\t--init npc--");
-    c->type = temp;
-    c->pos[dim_x] = x;
-    c->pos[dim_y] = y;
-    c->turn = 0;
-    c->sequence = 2;
-    c->dir = no_direction;
-    print_character(c);
-
-    //place rest
-    num = num - 2;
-    for (i = num; i > 0; i--) {
-      temp = (rand() % (num_character_types - 1)) + 1;
-      do {
-        x = rand() % (MAP_X - 2) + 1;
-        y = rand() % (MAP_Y - 2) + 1;
-      } while (!char_placable(x, y, temp));
-      world.char_map[y][x] = temp;
-      character_insert(temp, x, y, 0, i + 2, find_direction(temp));
-
-      printf("\n\t--init npc--");
-      c->type = temp;
-      c->pos[dim_x] = x;
-      c->pos[dim_y] = y;
-      c->turn = 0;
-      c->sequence = i + 2;
-      c->dir = find_direction(temp);
-      print_character(c);
+  for (y = 0; y < MAP_Y; y++) {
+    for (x = 0; x < MAP_X; x++) {
+      if (world.cur_map->cmap[y][x]) {
+        printw("%c", world.cur_map->cmap[y][x]->symbol);
+      } else {
+        switch (world.cur_map->map[y][x]) {
+        case ter_boulder:
+          /* Special-casing the border.  It needs to be boulder so hikers
+           * can't go there, but I like the look of the mountains better.
+           * The other option would be to add a border terrain, which is
+           * probably the better design decision, actually.
+           */
+          if (y == 0 || y == MAP_Y - 1 || x == 0 || x == MAP_X - 1) {
+            printw("%%");
+          } else {
+            printw("0");
+          }
+          break;
+        case ter_mountain:
+          printw("%%");
+          break;
+        case ter_tree:
+          printw("4");
+          break;
+         case ter_forest:
+          printw("^");
+          break;
+        case ter_path:
+          printw("#");
+          break;
+        case ter_mart:
+          printw("M");
+          break;
+        case ter_center:
+          printw("C");
+          break;
+        case ter_grass:
+          printw(":");
+          break;
+        case ter_clearing:
+          printw(".");
+          break;
+        case ter_exit:
+          printw("#");
+          break;
+        default:
+          default_reached = 1;
+          break;
+        }
+      }
     }
-    break;
+    printw("\n");
   }
-  free(c);
+
+  if (default_reached) {
+    fprintf(stderr, "Default reached in %s\n", __FUNCTION__);
+  }
+  refresh();
+}
+
+// The world is global because of its size, so init_world is parameterless
+void init_world()
+{
+  world.cur_idx[dim_x] = world.cur_idx[dim_y] = WORLD_SIZE / 2;
+  new_map();
+}
+
+void delete_world()
+{
+  int x, y;
+
+  //Only correct because current game never leaves the initial map
+  //Need to iterate over all maps in 1.05+
+  heap_delete(&world.cur_map->turn);
+
+  for (y = 0; y < WORLD_SIZE; y++) {
+    for (x = 0; x < WORLD_SIZE; x++) {
+      if (world.world[y][x]) {
+        free(world.world[y][x]);
+        world.world[y][x] = NULL;
+      }
+    }
+  }
 }
 
 void print_hiker_dist()
@@ -1427,7 +1703,7 @@ void print_hiker_dist()
       if (world.hiker_dist[y][x] == INT_MAX) {
         printf("   ");
       } else {
-        printf(" %02d", world.hiker_dist[y][x] % 100);
+        printf(" %5d", world.hiker_dist[y][x]);
       }
     }
     printf("\n");
@@ -1450,445 +1726,154 @@ void print_rival_dist()
   }
 }
 
-static int32_t character_cmp(const void *key, const void *with) {
-  if(((character_node_t *) key)->turn - ((character_node_t *) with)->turn == 0) {
-    return ((character_node_t *) key)->sequence - ((character_node_t *) with)->sequence;
-  } else {
-    return ((character_node_t *) key)->turn - ((character_node_t *) with)->turn;
+void print_trainer_list(WINDOW *win, char trainers[world.cur_map->num_trainers][25], int start)
+{
+  int i, count = 1;
+  for (i = start; i < start + 24 && i < world.cur_map->num_trainers; i++) {
+    mvwprintw(win, count, 1, trainers[i]);
+    count++;
   }
+  wrefresh(win);
 }
 
-#define _ter_cost(x, y, c) move_cost[c][world.cur_map->map[y][x]]
-
-int *find_dir(directions_t direction, int x, int y) 
+void trainer_list()
 {
-  int *pos = malloc(sizeof(int) * 3);
-  int _x = x, _y = y;
+  int i, j, y, x, input, count = 0;
+  WINDOW *list = newwin(26, 28, 10, 10);
+  char *vert, *horiz, trainers[world.cur_map->num_trainers][25];
 
-  switch(direction) {
-          case north:
-            _x = x;
-            _y = y + 1;
-            break;
-          case northeast:
-            _x = x + 1;
-            _y = y + 1;
-            break;
-          case east:
-            _x = x + 1;
-            _y = y;
-            break;
-          case southeast:
-            _x = x + 1;
-            _y = y - 1;
-            break;
-          case south:
-            _x = x;
-            _y = y - 1;
-            break;
-          case southwest:
-            _x = x - 1;
-            _y = y - 1;
-            break;
-          case west:
-            _x = x - 1;
-            _y = y;
-            break;
-          case northwest:
-          default:
-            _x = x - 1;
-            _y = y + 1;
-            break;
-        }
+  box(list, 0, 0);
 
-        pos[dim_x] = _x;
-        pos[dim_y] = _y;
-        pos[2] = direction;
-        return pos;
-}
-
-int *next_pos(character_type_t type, directions_t direction, int x, int y)
-{
-  int *pair = malloc(sizeof(int) * 3);
-  int _x, _y, min = INT_MAX;
-
-  printf("next_pos x: %d, y: %d\n", x, y);
-
-  pair[dim_x] = x; 
-  pair[dim_y] = y;
-  pair[2] = no_direction;
-
-  // printf("X: %u, Y: %u\n", pair[dim_x], pair[dim_y]);
-
-  switch(type) 
-  {
-    case char_hiker:
-      for (_y = y - 1; _y < y + 2; _y++) {
-        for (_x = x - 1; _x < x + 2; _x++) {
-          if (world.hiker_dist[_y][_x] < min && (_x != x && _y != y)) {
-            if(char_placable(_x, _y, type)) {
-              min = world.hiker_dist[_y][_x];
-              pair[dim_x] = _x;
-              pair[dim_y] = _y;
-            }
+  //r, 20 north and 14 west
+  for (i = 0; i < MAP_Y; i++) {
+    for (j = 0; j < MAP_X; j++) {
+      if(world.cur_map->cmap[i][j]) {
+        if(world.cur_map->cmap[i][j]->npc) {
+          vert = "north";
+          horiz = "west";
+          y = world.pc.pos[dim_y] - world.cur_map->cmap[i][j]->pos[dim_y];
+          x = world.pc.pos[dim_x] - world.cur_map->cmap[i][j]->pos[dim_x];
+          if (y < 0) {
+            y = y * -1;
+            vert = "south";
           }
+          if (x < 0) {
+            x = x * -1;
+            horiz = "east";
+          }
+          sprintf(trainers[count], "%c, %d %s and %d %s", world.cur_map->cmap[i][j]->symbol, y, vert, x, horiz);
+          count++;
         }
       }
-      break;
-    case char_rival:
-      for (_y = y - 1; _y < y + 2; _y++) {
-        for (_x = x - 1; _x < x + 2; _x++) {
-          if (world.rival_dist[_y][x] < min && (_x != x && _y != y)) {
-            if(char_placable(_x, _y, type)) {
-              min = world.rival_dist[_y][x];
-              pair[dim_x] = _x;
-              pair[dim_y] = _y;
-            }
-          }
-        }
-      }  
-        break;
-      case char_pacer:
-        pair = find_dir(direction, x, y);
-        if(char_placable(pair[dim_x], pair[dim_y], type)) {
-          if (direction < 4) {
-            direction = direction + 4;
-          } else {
-            direction = direction - 4;
-          }
-          pair = find_dir(direction, x, y);
-        }
-        break;
-      case char_wanderer:
-        pair = find_dir(direction, x, y);
-        printf("next_pos: find_dir\n");
-        if (!char_placable(pair[dim_x], pair[dim_y], type) || (world.cur_map->map[y][x] != world.cur_map->map[pair[dim_y]][pair[dim_x]])) {
-          printf("next_pos: first loop\n");
-          do {
-            direction = rand() % 8;
-            pair = find_dir(direction, x, y);
-            printf("x: %d\ny: %d\ndir: %d\n", pair[dim_x], pair[dim_y], pair[2]);
-          } while(!char_placable(pair[dim_x], pair[dim_y], type) || pair[2] == direction);
-          printf("next_pos: end loop\n");
-        }
-        break;
-      case char_explorer:
-        pair = find_dir(direction, x, y);
-        printf("next_pos: find_dir\n");
-        if (!char_placable(pair[dim_x], pair[dim_y], type)) {
-          printf("next_pos: first loop\n");
-          do {
-            direction = rand() % 8;
-            pair = find_dir(direction, x, y);
-            printf("x: %d\ny: %d\ndir: %d\n", pair[dim_x], pair[dim_y], pair[2]);
-          } while(!char_placable(pair[dim_x], pair[dim_y], type) || pair[2] == direction);
-          printf("next_pos: end loop\n");
-        }
-        break;
-      case char_sentry:
-      default:
-        break;
+    }
   }
-  // printf("X: %u, Y: %u\n", pair[dim_x], pair[dim_y]);
-  printf("next_pos x: %d, y: %d\n", pair[dim_x], pair[dim_y]);
-  return pair;
-}
 
-void print_char_map()
-{
-  int x, y;
+  count = 0;
 
-  for (y = 0; y < MAP_Y; y++) {
-    for (x = 0; x < MAP_X; x++) {
-      switch (world.char_map[y][x])
-      {
-        case char_pc:
-          putchar('@');
-          break;
-        case char_hiker:
-          putchar('h');
-          break;
-        case char_rival:
-          putchar('r');
-          break;
-        case char_pacer:
-          putchar('p');
-          break;
-        case char_wanderer:
-          putchar('w');
-          break;
-        case char_sentry:
-          putchar('s');
-          break;
-        case char_explorer:
-          putchar('e');
-          break;
-        default:
-          putchar('0');
-          break;
+  if (world.cur_map->num_trainers > 24) {
+    do {
+      print_trainer_list(list, trainers, count);
+      input = wgetch(list);
+
+      if (input == KEY_UP && count > 0) {
+        count--;
+      } else if (input == KEY_DOWN && count < world.cur_map->num_trainers - 23) {
+        count++;
+      } else if (input == 27) {
+        input = 'q';
       }
-    }
-    putchar('\n');
+    } while (input != 'q');
+  } else {
+    print_trainer_list(list, trainers, count);
+    do {
+      input = wgetch(list);
+
+      if (input == 27) {
+        input = 'q';
+      }
+    } while (input != 'q');
   }
-  putchar('\n');
+
+  touchwin(game);
+  refresh();
 }
 
-// character_node_t min_character()
-// {
-//   int i, min = 0;
-
-//   for(i = 1; i < queue_size; i++) {
-//     if(real_queue[i].turn < real_queue[min].turn) {
-//       min = i;
-//     }
-//   }
-
-//   return real_queue[min];
-// }
-
-void update_turn()
+void poke_battle(character_t *c)
 {
-  character_type_t map_type = char_rival;
-  character_node_t *c = malloc(sizeof(character_node_t));
-  // int i;
-  int *pos = malloc(sizeof(int) * 3);
-
-  // *c = min_character();
-  c = heap_remove_min(&turn_queue);
-
-
-  printf("\n\t--update--");
-  print_character(c);
-  
-  // i = c->sequence;
-
-  if(c->type == char_pc) {
-    printf("update_turn before x: %d, y: %d\n", c->pos[dim_x], c->pos[dim_y]);
-    world.char_map[c->pos[dim_y]][c->pos[dim_x]] = char_null;
-    pos = next_pos(c->type, c->dir, c->pos[dim_x], c->pos[dim_y]);
-    world.char_map[pos[dim_y]][pos[dim_x]] = char_pc;
-    printf("update_turn after x: %d, y: %d\n", pos[dim_x], pos[dim_y]);
-    c->dir = pos[2];
-    // pos = next_pos(real_queue[i].type, real_queue[i].dir, real_queue[i].pos[dim_x], real_queue[i].pos[dim_y]);
-    // real_queue[i].turn = real_queue[i].turn + _ter_cost(pos[dim_x], pos[dim_y], map_type);
-    c->turn = c->turn + _ter_cost(pos[dim_x], pos[dim_y], char_pc);
-    // printf("turn: %d\n", real_queue[i].turn);
-    character_insert(c->type, pos[dim_x], pos[dim_y], c->turn, c->sequence, c->dir);
-
-    printf("\n\t--endupdate-- turn: %d\n", c->turn);
-
-    // putchar('3'); putchar('\n');
-
-    print_char_map();
-    print_map();
-    usleep(250000);
-  } else {
-    if (c->type == char_hiker) {
-      // putchar('4'); putchar('\n');
-      map_type = char_hiker;
-    }
-    printf("update_turn before x: %d, y: %d\n", c->pos[dim_x], c->pos[dim_y]);
-    world.char_map[c->pos[dim_y]][c->pos[dim_x]] = char_null;
-    pos = next_pos(c->type, c->dir, c->pos[dim_x], c->pos[dim_y]);
-    world.char_map[pos[dim_y]][pos[dim_x]] = c->type;
-    printf("update_turn after x: %d, y: %d\n", pos[dim_x], pos[dim_y]);
-
-    // putchar('5'); putchar('\n');
-
-    // pos = next_pos(real_queue[i].type, real_queue[i].dir, real_queue[i].pos[dim_x], real_queue[i].pos[dim_y]);
-
-    // putchar('6'); putchar('\n');
-
-    //make position null in world.char_map
-    // world.char_map[real_queue[i].pos[dim_y]][real_queue[i].pos[dim_x]] = char_null;
-
-    // putchar('7'); putchar('\n');
-
-    //update position
-    // real_queue[i].pos[dim_x] = pos[dim_x];
-    // real_queue[i].pos[dim_y] = pos[dim_y];
-    c->pos[dim_x] = pos[dim_x];
-    c->pos[dim_y] = pos[dim_y];
-    c->dir = pos[2];
-
-    //make position hiker in world.char_map
-    // world.char_map[real_queue[i].pos[dim_y]][real_queue[i].pos[dim_x]] = real_queue[i].type;
-    // world.char_map[c->pos[dim_y]][c->pos[dim_x]] = c->type;
-
-    //calculate next move cost
-    // pos = next_pos(real_queue[i].type, real_queue[i].dir, real_queue[i].pos[dim_x], real_queue[i].pos[dim_y]);
-    // real_queue[i].turn = real_queue[i].turn + _ter_cost(pos[dim_x], pos[dim_y], map_type);
-    pos = next_pos(c->type, c->dir, c->pos[dim_x], c->pos[dim_y]);
-    printf("update_turn after 2 x: %d, y: %d\n", c->pos[dim_x], c->pos[dim_y]);
-    c->turn = c->turn + _ter_cost(pos[dim_x], pos[dim_y], map_type);
-
-    // putchar('8'); putchar('\n');
-
-    c->dir = pos[2];
-    //update hn
-    character_insert(c->type, c->pos[dim_x], c->pos[dim_y], c->turn, c->sequence, c->dir);
-
-    printf("\n\t--endupdate-- turn: %d\n", c->turn);
-    // putchar('9'); putchar('\n');
+  WINDOW *battle = newwin(3, 32, 10, 10);
+  box(battle, 0, 0);
+  mvwprintw(battle, 1, 1, "Enter ESC to exit poke battle");
+  wrefresh(battle);
+  while(wgetch(battle) != 27) {
   }
-  free(pos);
-  free(c);
+  touchwin(game);
+  refresh();
+  c->npc->defeated = 1;
 }
 
 void game_loop()
 {
-  int x, y;
-  char c;
+  character_t *c;
+  pair_t d;
+  
+  while (!world.pc.pc->quit) {
+    c = heap_remove_min(&world.cur_map->turn);
+    if (c == &world.pc) {
+      print_map();
+      move_func[move_pc](c, d);
+      world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x]] = NULL;
+      world.cur_map->cmap[d[dim_y]][d[dim_x]] = c;
+      c->next_turn += move_cost[char_pc][world.cur_map->map[c->pos[dim_y]]
+                                                           [c->pos[dim_x]]];
+      c->pos[dim_y] = d[dim_y];
+      c->pos[dim_x] = d[dim_x];
+      pathfind(world.cur_map);
+    } else {
+      if(!c->npc->defeated) {
 
-  do {
-    print_map();  
-    printf("Current position is %d%cx%d%c (%d,%d).  "
-           "Enter command: ",
-           abs(world.cur_idx[dim_x] - (WORLD_SIZE / 2)),
-           world.cur_idx[dim_x] - (WORLD_SIZE / 2) >= 0 ? 'E' : 'W',
-           abs(world.cur_idx[dim_y] - (WORLD_SIZE / 2)),
-           world.cur_idx[dim_y] - (WORLD_SIZE / 2) <= 0 ? 'N' : 'S',
-           world.cur_idx[dim_x] - (WORLD_SIZE / 2),
-           world.cur_idx[dim_y] - (WORLD_SIZE / 2));
-    scanf(" %c", &c);
-    switch (c) {
-    case 'n':
-      if (world.cur_idx[dim_y]) {
-        world.cur_idx[dim_y]--;
-        new_map();
       }
-      break;
-    case 's':
-      if (world.cur_idx[dim_y] < WORLD_SIZE - 1) {
-        world.cur_idx[dim_y]++;
-        new_map();
-      }
-      break;
-    case 'e':
-      if (world.cur_idx[dim_x] < WORLD_SIZE - 1) {
-        world.cur_idx[dim_x]++;
-        new_map();
-      }
-      break;
-    case 'w':
-      if (world.cur_idx[dim_x]) {
-        world.cur_idx[dim_x]--;
-        new_map();
-      }
-      break;
-     case 'q':
-      break;
-    case 'f':
-      scanf(" %d %d", &x, &y);
-      if (x >= -(WORLD_SIZE / 2) && x <= WORLD_SIZE / 2 &&
-          y >= -(WORLD_SIZE / 2) && y <= WORLD_SIZE / 2) {
-        world.cur_idx[dim_x] = x + (WORLD_SIZE / 2);
-        world.cur_idx[dim_y] = y + (WORLD_SIZE / 2);
-        new_map();
-      }
-      break;
-    case '?':
-    case 'h':
-      printf("Move with 'e'ast, 'w'est, 'n'orth, 's'outh or 'f'ly x y.\n"
-             "Quit with 'q'.  '?' and 'h' print this help message.\n");
-      break;
-    default:
-      fprintf(stderr, "%c: Invalid input.  Enter '?' for help.\n", c);
-      break;
+      move_func[c->npc->mtype](c, d);
+      world.cur_map->cmap[c->pos[dim_y]][c->pos[dim_x]] = NULL;
+      world.cur_map->cmap[d[dim_y]][d[dim_x]] = c;
+      c->next_turn += move_cost[c->npc->ctype][world.cur_map->map[d[dim_y]]
+                                                                 [d[dim_x]]];
+      c->pos[dim_y] = d[dim_y];
+      c->pos[dim_x] = d[dim_x];
     }
-  } while (c != 'q');
-
-  delete_world();
+    heap_insert(&world.cur_map->turn, c);
+  }
 }
 
 int main(int argc, char *argv[])
 {
   struct timeval tv;
   uint32_t seed;
-  int i, num_npc = 10;
 
-  gettimeofday(&tv, NULL);
-  seed = (tv.tv_usec ^ (tv.tv_sec << 20)) & 0xffffffff;
-
-  if (argc > 1) {
-    for(i = 1; i < argc; i++) {
-      if (strcmp(argv[i], "--numtrainers")) {
-        num_npc = atoi(argv[i + 1]);
-        i++;
-      } else if (strcmp(argv[i], "--seed")) {
-        seed = atoi(argv[i + 1]);
-        i++;
-      }
-    }
+  if (argc == 2) {
+    seed = atoi(argv[1]);
+  } else {
+    gettimeofday(&tv, NULL);
+    seed = (tv.tv_usec ^ (tv.tv_sec << 20)) & 0xffffffff;
   }
-
-  // real_queue = malloc(sizeof(character_node_t) * (num_npc + 1));
-  // queue_size = num_npc + 1;
 
   printf("Using seed: %u\n", seed);
   srand(seed);
 
-  heap_init(&turn_queue, character_cmp, NULL);
+  initscr();
+  raw();
+  noecho();
+  curs_set(0);
+  keypad(stdscr, TRUE);
+  game = newwin(26, 82, 10, 10);
+  box(game, 0, 0);
+
   init_world();
-  //also puts pc in turn_queue
-  init_pc();
-  //also puts npcs in turn_queue
-  init_npcs(num_npc);
-  
-  pathfind(world.cur_map);
-
-  print_hiker_dist();
-  print_rival_dist();
-  print_char_map();
-  print_map();
-
-  // putchar('1'); putchar('\n');
-
-  // heap_decrease_key_no_replace(&turn_queue, c->hn);
-  // c = heap_remove_min(&turn_queue);
-  // c->hn = NULL;
-
-  // printf("\n\t--update-- \ntype: ");
-  // switch (c->type)
-  //     {
-  //       case char_pc:
-  //         putchar('@');
-  //         break;
-  //       case char_hiker:
-  //         putchar('h');
-  //         break;
-  //       case char_rival:
-  //         putchar('r');
-  //         break;
-  //       case char_pacer:
-  //         putchar('p');
-  //         break;
-  //       case char_wanderer:
-  //         putchar('w');
-  //         break;
-  //       case char_sentry:
-  //         putchar('s');
-  //         break;
-  //       case char_explorer:
-  //         putchar('e');
-  //         break;
-  //       default:
-  //         putchar('0');
-  //         break;
-  //     }
-  // printf("\npos[x]: %d \npos[y]: %d \nturn: %d \nsequence: %d \ndir: %c", c->pos[dim_x], c->pos[dim_y], c->turn, c->sequence, c->dir);
-
-  // c->hn = NULL;
-
-  // putchar('2'); putchar('\n');
-  
-  while (1 == 1) {
-    update_turn();
-  }
-
-  return 0;
-
+  // print_hiker_dist();
+  // print_rival_dist();
   game_loop();
-
+  
+  delete_world();
+  endwin();
+  
   return 0;
 }

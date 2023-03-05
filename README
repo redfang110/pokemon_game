@@ -1,9 +1,8 @@
 This program generates a map (described below), 
-    randomly places a player character on a road,
+    randomly places a player character on a road and npc throughout the map,
     and then generates a movement map for a hiker character and rival character
 
-The program then asks if you would like to quit the program or enter the game loop
-    if the game loop is entered the program does as described below
+The program allows you to make various moves, encounter npcs in battle, display a list of npcs, and enter poker marts and poke centers.
 
 This is a program that generates a 401x401 world.
 Each unit of the world is made of 80x21 maps.
@@ -14,8 +13,4 @@ Each map is made up of
     and mountains (or boulders) (%) with 2 roads going N-S and E-W, 
     a pokemart, 
     and a pokecenter. 
-(internally toggled off) The player can navigate manually by inputting n, e, s, w 
-    fly to a location by inputting f x y 
-    or quit by inputting q
-
-The program generates distance maps for characters, fills the map with characters, and runs an infinite loop to update the character's turns
+The player can navigate manually by inputting hjklyubn, open npc list with t (close with esc)(Poke-battles are closed with esc), or enter a poke mart/center with < (close with >), or quit by inputting q

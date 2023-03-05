@@ -104,7 +104,8 @@ Updated
 												(this means we are calculating distance from PC 
 												instead of from where the path started)
 											UPDATED nested for loop to go from 0-MAP											
-*/
+
+*//*
 Assignment 1.04
 
 10/03/2022
@@ -147,3 +148,40 @@ Created
 Updated
 	int main():	UPDATE-						-	REMOVED cluttering main logic (unused game loop from previous assignment)
 														(moved logic to game_loop())
+
+*/
+Assignment 1.05
+
+10/16/2022
+Updated
+	int main(): UPDATE-		-
+	static void move_pc_func(): UPDATE-
+	struct pc_t:
+	void init_pc():
+	static void print_map():
+	void game_loop():
+
+10/17/2022
+Created
+	trainer_list():
+
+Updated
+	struct npc_t:
+	new_hiker():
+	new_rival():
+	new_char_other():
+
+10/18/2022
+Created
+	poke_battle():
+
+Updated
+	static void move_hiker_func():
+	static void move_rival_func():
+	static void move_pacer_func():
+	static void move_wanderer_func():
+	static void move_sentry_func():
+	static void move_explorer_func():
+	static void move_pc_func():
+	void place_characters():
+	void print_trainer_list():
