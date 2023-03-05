@@ -149,7 +149,7 @@ Updated
 	int main():	UPDATE-						-	REMOVED cluttering main logic (unused game loop from previous assignment)
 														(moved logic to game_loop())
 
-*/
+*//*
 Assignment 1.05
 
 10/16/2022
@@ -185,3 +185,13 @@ Updated
 	static void move_pc_func():
 	void place_characters():
 	void print_trainer_list():
+
+*/
+Assignment 1.06
+
+10/25/2022
+Refractored
+	Everything: -	-changed everything to c++ code
+
+10/26/2022
+	Tried to fix bugs
