@@ -1,5 +1,6 @@
 /*
 Assignment 1.01
+
 09/05/2022: 
 Stated map generation project. 
 Created functions-
@@ -28,6 +29,7 @@ Functions
 
 *//*
 Assignment 1.02
+
 09/13/2022
 Created 
 	map struct containing an int terrain[21][80] and 4 ints (1 for each direction of road) 
@@ -44,6 +46,7 @@ Updated map struct to contain and int x, y for where it exists in the world and 
 
 *//*
 Assignment 1.03
+
 09/19/2022
 Downloadeded Prof 1.02 solution and spent the day trying to understand what was going on
 Problems
@@ -102,3 +105,45 @@ Updated
 												instead of from where the path started)
 											UPDATED nested for loop to go from 0-MAP											
 */
+Assignment 1.04
+
+10/03/2022
+Downloaded assignment 1.03 solution and tried to familiarize with new code
+
+10/04/2022
+Created
+	heap_t turn_queue:	FINISHED-			-	Global heap_t
+	struct character_node_t: FINISHED-		-	contains character_type_t type, pair_t pos, int turn, int sequence;
+	void init_npcs(): FINISHED-				-	Parameters: none
+													randomly places passed number of NPCs in world.char_map and calls void character_insert()
+													(ensures at least one hiker and rival unless passed number < 2)
+	int char_placable(): FINISHED-			-	Parameters: (int x, int y, character_type_t character)
+													if character is not allowed in [y][x], return 0; else return 1;
+	static void print_char(): FINISHED-		-	putchar(c) where c is the char relating to the passed character_type_t
+	void character_insert(): FINISHED-		-	Parameters: (character_type_t type, int x, int y, int turn, int sequence, char direction)
+													inserts a character_node_t filled with passed information into turn_queue
+	char find_direction(): FINISHED-		-	Parameters: (character_type_t type)
+													returns a random character (n, e, s, w) if the character type has a direction 
+													(otherwise, returns NULLL)
+Updated
+	struct world_t: UPDATE-					-	ADDED character_type_t char_map[MAP_Y][MAP_X];
+	void init_pc(): UPDATE-					-	ADDED call to void character_insert()
+	int main(): UPDATE-						-	ADDED two switches "--numtrainers" and "--seed" both take a numerical value after the switch
+												UPDATED to do 1.04 stuff instead of 1.03 stuff
+	void print_map(): UPDATE-				-	UPDATED to print character instead of terrain if coordinate is not char_null in world.char_map
+	enum character_type_t: UPDATE-			-	UPDATED to char_pc, char_hiker, char_rival, char_pacer, char_wanderer, 
+													char_sentry, char_explorer, num_character_types, char_null
+
+10/05/2022
+Created
+	int current_turn: FINISHED-				-	Global int
+	void update_turn(): FINISHED-			-	Parameters: none
+													dequeues the character whose turn it is, updates position and turn, then requeues
+	void game_loop(): FINISHED-				-	Parameters: none
+													Copy/pasted from cluttering main logic (unused game loop from previous assignment)
+	pair_t *next_pos(): FINISHED-			-	Parameters: (character_type_t type, char direction, int x, int y)
+													returns a pointer (array) of the next position the character will move to
+
+Updated
+	int main():	UPDATE-						-	REMOVED cluttering main logic (unused game loop from previous assignment)
+														(moved logic to game_loop())

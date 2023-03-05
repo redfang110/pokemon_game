@@ -14,6 +14,8 @@ Each map is made up of
     and mountains (or boulders) (%) with 2 roads going N-S and E-W, 
     a pokemart, 
     and a pokecenter. 
-The player can navigate manually by inputting n, e, s, w 
+(internally toggled off) The player can navigate manually by inputting n, e, s, w 
     fly to a location by inputting f x y 
     or quit by inputting q
+
+The program generates distance maps for characters, fills the map with characters, and runs an infinite loop to update the character's turns

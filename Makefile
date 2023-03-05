@@ -11,7 +11,7 @@ heap.o: heap.c heap.h
 
 tar:
 	cd ..
-	tar cvfz hall_noah.assignment-1.03.tar.gz hall_noah.assignment-1.03
+	tar cvfz hall_noah.assignment-1.04.tar.gz hall_noah.assignment-1.04
 
 run:
 	./poke
