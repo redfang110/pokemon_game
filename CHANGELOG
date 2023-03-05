@@ -1,3 +1,4 @@
+Assignment 1.01
 09/05/2022: 
 Stated map generation project. 
 Created functions-
@@ -22,3 +23,17 @@ Functions
 	void fill(): FINISHED-		-nested for loop checks for uninitialized variables and sets them to 4 (%) (this is where border is initialized)
 	void civilize(): FINISHED-	-generates randomized straight roads (N-S and E-W) and 4x4 poke mart and pokecenter 
 	void print_table(): FINISHED-	-prints the map out with a space separating each character
+
+Assignment 1.02
+09/13/2022
+Created 
+	map struct containing an int terrain[21][80] and 4 ints (1 for each direction of road) 
+	world struct containing a map *maps[401][401], ints for current position, and an int for quit
+	updated all old functions for new implementation
+09/14/2022
+Created
+	void menu(): FINISHED -				-takes char input from user (passed from main) and excecutes relevant command
+	void check_direction(): FINISHED -	-takes an array of length 4 and a pointer to the world. It fills the array with location of adjacent exits (/*in the order n, e, s, w*/)
+Made lots of implementation changes to void civilize(): to make roads meet in the middle if opposite exit is not the same value, account for the edge of the world, etc.
+Made lots of changes to main.
+Updated map struct to contain and int x, y for where it exists in the world and int d for the probability that buildings spawn within the map.
