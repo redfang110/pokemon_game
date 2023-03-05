@@ -1,0 +1,24 @@
+09/05/2022: 
+Stated map generation project. 
+Created functions-
+    	int main(int argc, char *argv[]): IN PROGRESS - -should call all necessary functions to randomly generate and print a map
+        	initializes 2d map array full of '-' passes array to generate()
+    	void generate(char map[80][21]): IN PROGRESS -  -should fill passed 2d array with a randomly generated map
+        	has seed arrays for tall grass, short grass, forest, and mountains (organized {x1, y1, x2, y2, ...}).
+        	initializes each array by calling getSeed()
+    	int * getSeed(int size): FINISHED -             -should return an array of random seeds 
+        	takes desired size of array and returns a random seed location (does not generate seeds on the map border).
+    	void civalize(int map[80][21]): IN PROGRESS -   -finishing touches. 
+				Should put paths, pokemart, pokecenter, and maybe random rocks and trees on the map.
+        	asigns random x coordinate to pokemart and random y coordinate to pokecenter. 
+        	Initializes an array of 4 points where the roads leave the map.
+09/06/2022: 
+Added albelian sandpile implementation for region seed growth.
+Got stuck on sandpile implementation (lots of bugs and crashing); restarted with rectangle implementation instead
+Functions
+	int main(): FINISHED -		-initializes map 2d array and calls generate
+	void generate(): FINISHED -	-calls get_grid() several times using for loop, then calls fill(), civilize(), and print_table()
+	void get_grid(): FINISHED-	-takes an array of 4 ints (x1, y1, x2, y2) and fills the rectangle between those points
+	void fill(): FINISHED-		-nested for loop checks for uninitialized variables and sets them to 4 (%) (this is where border is initialized)
+	void civilize(): FINISHED-	-generates randomized straight roads (N-S and E-W) and 4x4 poke mart and pokecenter 
+	void print_table(): FINISHED-	-prints the map out with a space separating each character
