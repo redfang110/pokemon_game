@@ -1,26 +1,44 @@
-all: poke
+CC = gcc
+CXX = g++
+ECHO = echo
+RM = rm -f
 
-poke: poke327.o heap.o character.o io.o
-	g++ -lncurses poke327.o heap.o character.o io.o -o poke
+TERM = "F2022"
 
-poke327.o: poke327.cpp heap.h io.h
-	g++ -Wall -Werror -g poke327.cpp -c
+CFLAGS = -Wall -Werror -ggdb -funroll-loops -DTERM=$(TERM)
+CXXFLAGS = -Wall -Werror -ggdb -funroll-loops -DTERM=$(TERM)
 
-heap.o: heap.c heap.h
-	gcc -Wall -Werror -g heap.c -c
+LDFLAGS = -lncurses
 
-character.o: character.cpp poke327.h io.h
-	g++ -Wall -Werror -g character.cpp -c
+BIN = poke327
+OBJS = poke327.o heap.o character.o io.o db_parse.o pokemon.o
 
-io.o: io.cpp io.h poke327.h
-	g++ -Wall -Werror -g io.cpp -c
+all: $(BIN) etags
 
-tar:
-	cd ..
-	tar cvfz hall_noah.assignment-1.07.tar.gz hall_noah.assignment-1.07
+$(BIN): $(OBJS)
+	@$(ECHO) Linking $@
+	@$(CXX) $^ -o $@ $(LDFLAGS)
 
-run:
-	./poke
+-include $(OBJS:.o=.d)
+
+%.o: %.c
+	@$(ECHO) Compiling $<
+	@$(CC) $(CFLAGS) -MMD -MF $*.d -c $<
+
+%.o: %.cpp
+	@$(ECHO) Compiling $<
+	@$(CXX) $(CXXFLAGS) -MMD -MF $*.d -c $<
+
+.PHONY: all clean clobber etags
 
 clean:
-	rm -f *.o poke
+	@$(ECHO) Removing all generated files
+	@$(RM) *.o $(BIN) *.d TAGS core vgcore.* gmon.out
+
+clobber: clean
+	@$(ECHO) Removing backup files
+	@$(RM) *~ \#* *pgm
+
+etags:
+	@$(ECHO) Updating TAGS
+	@etags *.[ch]
