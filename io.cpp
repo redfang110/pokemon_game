@@ -375,6 +375,58 @@ void io_battle(character *aggressor, character *defender)
   }
 }
 
+void io_poke_battle(int dist)
+{
+  WINDOW *win = newwin(10, 50, 10, 10);
+  int level;
+  std::string msg = "A wild ";
+  if (dist <= 200) {
+    level = (rand() % (dist/2)) + 1;
+  } else {
+    level = (rand() % 100) + (dist - 200)/2;
+    level = ((level > 100) ? 100 : level);
+  }
+  Pokemon wild_pokemon(level);
+  msg += wild_pokemon.identifier;
+  msg += " has appeared!";
+  // io_display();
+  mvwprintw(win, 0, 0, msg.c_str());
+
+  //print stats
+  msg = "\t\t--Stats--";
+  mvwprintw(win, 0, 1, msg.c_str());
+  msg = "Attack: ";
+  msg += wild_pokemon.stats.attack;
+  mvwprintw(win, 0, 2, msg.c_str());
+  msg = "Defense: ";
+  msg += wild_pokemon.stats.defense;
+  mvwprintw(win, 0, 3, msg.c_str());
+  msg = "Special Attack: ";
+  msg += wild_pokemon.stats.special_attack;
+  mvwprintw(win, 0, 4, msg.c_str());
+  msg = "Special Defense: ";
+  msg += wild_pokemon.stats.special_defense;
+  mvwprintw(win, 0, 5, msg.c_str());
+  msg = "Speed: ";
+  msg += wild_pokemon.stats.speed;
+  mvwprintw(win, 0, 6, msg.c_str());
+
+  msg = "\t\t--Moves--";
+  mvwprintw(win, 0, 8, msg.c_str());
+  msg = "Move 1: ";
+  msg += wild_pokemon.movesList[0].identifier;
+  mvwprintw(win, 0, 9, msg.c_str());
+  if (wild_pokemon.movesList.size() > 1) {
+    msg = "Move 2: ";
+    msg += wild_pokemon.movesList[1].identifier;
+    mvwprintw(win, 0, 10, msg.c_str());
+  }
+
+  wrefresh(win);
+  getch();
+  delwin(win);
+}
+
 uint32_t move_pc_dir(uint32_t input, pair_t dest)
 {
   dest[dim_y] = world.pc.pos[dim_y];
@@ -440,6 +492,17 @@ uint32_t move_pc_dir(uint32_t input, pair_t dest)
   if (move_cost[char_pc][world.cur_map->map[dest[dim_y]][dest[dim_x]]] ==
       INT_MAX) {
     return 1;
+  }
+
+  if (world.cur_map->map[dest[dim_y]][dest[dim_x]] == ter_grass && rand() % 10 == 0) {
+    int temp1, temp2, dist;
+
+    //calculate manhattan distance
+    temp1 = (world.cur_idx[dim_x] < 0 ? -1 * world.cur_idx[dim_x] : world.cur_idx[dim_x]); 
+    temp2 = (world.cur_idx[dim_y] < 0 ? -1 * world.cur_idx[dim_y] : world.cur_idx[dim_y]); 
+    dist = temp1 + temp2;
+
+    io_poke_battle(dist);
   }
 
   return 0;

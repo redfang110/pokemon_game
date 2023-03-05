@@ -13,6 +13,7 @@
 #include <fstream>
 #include <ostream>
 #include <sstream>
+// #include <vector>
 
 #include "heap.h"
 #include "poke327.h"
@@ -27,6 +28,15 @@ typedef struct queue_node {
 } queue_node_t;
 
 world_t world;
+pokedex_pokemon pokemon_list[1093];
+pokedex_poke_moves poke_moves[528239];
+pokedex_poke_species poke_species[899];
+pokedex_poke_stats poke_stats[6553];
+pokedex_poke_types poke_types[1676];
+pokedex_experience experience[601];
+pokedex_type_names type_names[19];
+pokedex_moves moves[845];
+pokedex_stats stats[9];
 
 pair_t all_dirs[8] = {
   { -1, -1 },
@@ -952,9 +962,7 @@ static void print_map()
 {
   int x, y;
   int default_reached = 0;
-
   printf("\n\n\n");
-
   for (y = 0; y < MAP_Y; y++) {
     for (x = 0; x < MAP_X; x++) {
       if (world.cur_map->cmap[y][x]) {
@@ -992,7 +1000,6 @@ static void print_map()
     }
     putchar('\n');
   }
-
   if (default_reached) {
     fprintf(stderr, "Default reached in %s\n", __FUNCTION__);
   }
@@ -1113,21 +1120,130 @@ void usage(char *s)
   exit(1);
 }
 
-pokedex_pokemon pokemon[1093];
-pokedex_poke_moves poke_moves[528239];
-pokedex_poke_species poke_species[899];
-pokedex_poke_stats poke_stats[6553];
-pokedex_poke_types poke_types[1676];
-pokedex_experience experience[601];
-pokedex_type_names type_names[19];
-pokedex_moves moves[845];
-pokedex_stats stats[9];
+// pokedex_pokemon pokemon_list[1093];
+// pokedex_poke_moves poke_moves[528239];
+// pokedex_poke_species poke_species[899];
+// pokedex_poke_stats poke_stats[6553];
+// pokedex_poke_types poke_types[1676];
+// pokedex_experience experience[601];
+// pokedex_type_names type_names[19];
+// pokedex_moves moves[845];
+// pokedex_stats stats[9];
+
+std::vector<pokedex_moves> init_poke_moves(Pokemon poke)
+{
+  std::vector<pokedex_moves> moves_ids;
+  for (int i = 1; i < 528239; i++) {
+    if (poke_moves[i].pokemon_id == pokemon_list[poke.id].species_id && poke_moves[poke.id].pokemon_move_method_id == 1) {
+      if (poke_moves[i].level <= poke.level) {
+        moves_ids.push_back(moves[poke_moves[i].move_id]);
+      }
+    }
+  }
+
+  if (!moves_ids.empty()) {
+    while (moves_ids.size() > 2) {
+      moves_ids.erase(moves_ids.begin() + (rand() % moves_ids.size()));
+    }
+  } else {
+    while (moves_ids.size() < 1) {
+      poke.level++;
+      for (int i = 1; i < 528239; i++) {
+        if (poke_moves[i].pokemon_id == pokemon_list[poke.id].species_id && poke_moves[poke.id].pokemon_move_method_id == 1) {
+          if (poke_moves[i].level <= poke.level) {
+            moves_ids.push_back(moves[poke_moves[i].move_id]);
+          }
+        }
+        if (moves_ids.size() == 2) {
+          break;
+        }
+      }
+    }
+  }
+  return moves_ids;
+}
+
+/*  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * 
+* To find the level-up moveset of a pokemon, you’ll want ´ pokemon_moves.pokemon_id equal to  *
+* pokemon.species_id and pokemon_moves.pokemon_move_method_id equal to 1. From these,         *
+* select your two moves from a uniform distribution.                                          *
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *  */
+Pokemon::Pokemon(int level) {
+  //initialize id, level, identifier, species_id, and base_experience
+  int id = (rand() % 1092) + 1;
+  this->level = level;
+  identifier = pokemon_list[id].identifier;
+  species_id = pokemon_list[id].species_id;
+  base_experience = pokemon_list[id].base_experience;
+
+  //initialize gender
+  if (rand() % 2 == 0) {
+    gender = male;
+  } else {
+    gender = female;
+  }
+
+  //initialize is_shiny
+  if (rand() % 8192 == 0) {
+    is_shiny = true;
+  } else {
+    is_shiny = false;
+  }
+
+  //initialize movesList TODO
+  movesList = init_poke_moves(*this);
+  
+  //initialize IVs
+  IVs.HP = rand() % 16;
+  IVs.attack = rand() % 16;
+  IVs.defense = rand() % 16;
+  IVs.speed = rand() % 16;
+  IVs.special_attack = rand() % 16;
+  IVs.special_defense = rand() % 16;
+
+  //initialize base_stats
+  for (int i = 1; i < 6553; i++) {
+    if (poke_stats[i].pokemon_id == id) {
+      switch (poke_stats[i].stat_id)
+      {
+      case HP:
+        base_stats.HP = poke_stats[i].base_stat;
+        break;
+      case attack:
+        base_stats.attack = poke_stats[i].base_stat;
+        break;
+      case defense:
+        base_stats.defense = poke_stats[i].base_stat;
+        break;
+      case special_attack:
+        base_stats.special_attack = poke_stats[i].base_stat;
+        break;
+      case special_defense:
+        base_stats.special_defense = poke_stats[i].base_stat;
+        break;
+      case speed:
+        base_stats.speed = poke_stats[i].base_stat;
+        break;
+      default:
+        cout << "Pokemon constructor default reached\n";
+        break;
+      }
+    }
+  }
+  //initialize stats
+  stats.HP = (((base_stats.HP + IVs.HP) * 2 * level) / 100) + level + 10;
+  stats.attack = (((base_stats.attack + IVs.attack) * 2 * level) / 100) + 5;
+  stats.defense = (((base_stats.defense + IVs.defense) * 2 * level) / 100) + 5;
+  stats.special_attack = (((base_stats.special_attack + IVs.special_attack) * 2 * level) / 100) + 5;
+  stats.special_defense = (((base_stats.special_defense + IVs.special_defense) * 2 * level) / 100) + 5;
+  stats.speed = (((base_stats.speed + IVs.speed) * 2 * level) / 100) + 5;
+}
 
 void initFiles()
 {
   for (int i = 0; i < 1093; i++)
   {
-    pokemon[i] = pokedex_pokemon();
+    pokemon_list[i] = pokedex_pokemon();
   }
 
   for (int i = 0; i < 528239; i++)
@@ -1208,10 +1324,10 @@ int getNext(string str, string deliminator)
     return INT_MAX;
   }
   int i = 0;
-  while (str[i] != deliminator[0]) {
+  while (i != str.size() && str[i] != deliminator[0]) {
     // temp += str[i]; 
     i++;
-    // if (str.size() == i) {
+    // if (i == str.size()) {
     //   break;
     // }
   }
@@ -1239,7 +1355,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "pokemon\n";
+    cout << "pokemon error\n";
   }
 
   std::getline(f, input);
@@ -1253,7 +1369,7 @@ int parseAll()
     // cout << "parse pokemon pre getNext\n";
     temp = getNext(input.substr(pos1, pos2), ",");
     // cout << "parse pokemon post getNext\n";
-    pokemon[i].id = temp;
+    pokemon_list[i].id = temp;
     // cout << "parse pokemon post assign\n";
     // cout << temp << std::endl;
     // cout << "parse pokemon post cout temp\n";
@@ -1265,21 +1381,21 @@ int parseAll()
     // cout << "parse pokemon pre getNext\n";
     str = input.substr(pos1, pos2 + 1);
     // cout << "parse pokemon pre getNext\n";
-    pokemon[i].identifier = str;
+    pokemon_list[i].identifier = str;
     // cout << str << std::endl;
 
     // cout << "parse pokemon prespecies_id\n";
     input = input.substr(pos2 + 1, input.size() - 1);
     pos2 = input.find(deliminator);
     temp = getNext(input.substr(pos1, pos2), ",");
-    pokemon[i].species_id = temp;
+    pokemon_list[i].species_id = temp;
     // cout << temp << std::endl;
 
     // cout << "parse pokemon pre height\n";
     input = input.substr(pos2 + 1, input.size() - 1);
     pos2 = input.find(deliminator);
     temp = getNext(input.substr(pos1, pos2), ",");
-    pokemon[i].height = temp;
+    pokemon_list[i].height = temp;
     // cout << temp << std::endl;
 
     // cout << "parse pokemon pre weight\n";
@@ -1289,7 +1405,7 @@ int parseAll()
     // cout << "parse pokemon pre getNext\n";
     temp = getNext(input.substr(pos1, pos2), ",");
     // cout << "parse pokemon pre weight = temp\n";
-    pokemon[i].weight = temp;
+    pokemon_list[i].weight = temp;
     // cout << "parse pokemon pre print temp\n";
     // cout << temp << std::endl;
 
@@ -1297,21 +1413,21 @@ int parseAll()
     input = input.substr(pos2 + 1, input.size() - 1);
     pos2 = input.find(deliminator);
     temp = getNext(input.substr(pos1, pos2), ",");
-    pokemon[i].base_experience = temp;
+    pokemon_list[i].base_experience = temp;
     // cout << temp << std::endl;
 
     // cout << "parse pokemon pre order\n";
     input = input.substr(pos2 + 1, input.size() - 1);
     pos2 = input.find(deliminator);
     temp = getNext(input.substr(pos1, pos2), ",");
-    pokemon[i].order = temp;
+    pokemon_list[i].order = temp;
     // cout << temp << std::endl;
 
     // cout << "parse pokemon pre is_default\n";
     input = input.substr(pos2 + 1, input.size() - 1);
     pos2 = input.find(deliminator);
     temp = getNext(input.substr(pos1, pos2), ",");
-    pokemon[i].is_default = temp;
+    pokemon_list[i].is_default = temp;
     // cout << temp << std::endl;
   }
   f.close();
@@ -1321,7 +1437,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "pokemon_move\n";
+    cout << "pokemon_move error\n";
   }
 
   std::getline(f, input);
@@ -1365,7 +1481,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "pokemon_species\n";
+    cout << "pokemon_species error\n";
   }
 
   std::getline(f, input);
@@ -1485,7 +1601,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "pokemon_stats\n";
+    cout << "pokemon_stats error\n";
   }
 
   std::getline(f, input);
@@ -1519,7 +1635,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "pokemon_types\n";
+    cout << "pokemon_types error\n";
   }
 
   std::getline(f, input);
@@ -1548,7 +1664,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "experience\n";
+    cout << "experience error\n";
   }
 
   std::getline(f, input);
@@ -1577,7 +1693,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "type_names\n";
+    cout << "type_names error\n";
   }
 
   std::getline(f, input);
@@ -1612,7 +1728,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "moves\n";
+    cout << "moves error\n";
   }
 
   std::getline(f, input);
@@ -1703,7 +1819,7 @@ int parseAll()
   f.open(file);
   if (!f.is_open()) {
     success = 2;
-    // cout << "stats\n";
+    cout << "stats error\n";
   }
 
   std::getline(f, input);
@@ -1738,6 +1854,8 @@ int parseAll()
   }
   f.close();
 
+  // sleep(1);
+
   return success;
 }
 
@@ -1759,14 +1877,14 @@ void printFile(char *argv[])
     cout << "id,identifier,species_id,height,weight,base_experience,oder,is_default\n";
     for (int i = 1; i <= 1092; i++)
     {
-      cout << printNext(pokemon[i].id) << ",";
-      cout << pokemon[i].identifier << ",";
-      cout << printNext(pokemon[i].species_id) << ",";
-      cout << printNext(pokemon[i].height) << ",";
-      cout << printNext(pokemon[i].weight) << ",";
-      cout << printNext(pokemon[i].base_experience) << ",";
-      cout << printNext(pokemon[i].order) << ",";
-      cout << printNext(pokemon[i].is_default) << "\n";
+      cout << printNext(pokemon_list[i].id) << ",";
+      cout << pokemon_list[i].identifier << ",";
+      cout << printNext(pokemon_list[i].species_id) << ",";
+      cout << printNext(pokemon_list[i].height) << ",";
+      cout << printNext(pokemon_list[i].weight) << ",";
+      cout << printNext(pokemon_list[i].base_experience) << ",";
+      cout << printNext(pokemon_list[i].order) << ",";
+      cout << printNext(pokemon_list[i].is_default) << "\n";
     }
   }
 
@@ -1889,14 +2007,15 @@ void printFile(char *argv[])
 
 int main(int argc, char *argv[])
 {
-  // cout << "Start\n";
+  cout << "Start\n";
   if (parseAll() != 0)
   {
     cout << "Some file could not be read..\n";
   }
-  // cout << "parsed\n";
+  cout << "parsed\n";
+  sleep(1);
 
-  printFile(argv);
+  // printFile(argv);
   // cout << "done\n";
 
   // pokemon, 
@@ -1913,7 +2032,7 @@ int main(int argc, char *argv[])
   // ifstream f(file); wont work, need an import?
   // file = base + “pokedex/data/csv/pokemon.csv”;
   // f.open(file);
-  return 0;
+  // return 0;
   struct timeval tv;
   uint32_t seed;
   int long_arg;
@@ -1924,6 +2043,8 @@ int main(int argc, char *argv[])
 
   do_seed = 1;
   
+  cout << "check args\n";
+  sleep(1);
   if (argc > 1) {
     for (i = 1, long_arg = 0; i < argc; i++, long_arg = 0) {
       if (argv[i][0] == '-') { /* All switches start with a dash */
@@ -1949,6 +2070,8 @@ int main(int argc, char *argv[])
       }
     }
   }
+  cout << "args checked\n";
+  sleep(1);
 
   if (do_seed) {
     /* Allows me to start the game more than once *
@@ -1956,12 +2079,17 @@ int main(int argc, char *argv[])
     gettimeofday(&tv, NULL);
     seed = (tv.tv_usec ^ (tv.tv_sec << 20)) & 0xffffffff;
   }
+  cout << "seed done\n";
+  sleep(1);
 
   printf("Using seed: %u\n", seed);
   srand(seed);
 
+  cout << "init terminal\n";
+  sleep(1);
   io_init_terminal();
-  
+  cout << "init world\n";
+  sleep(1);
   init_world();
 
   /* print_hiker_dist(); */
@@ -2027,10 +2155,14 @@ int main(int argc, char *argv[])
 
   */
 
+  cout << "game loop starting\n";
+  sleep(1);
   game_loop();
-  
+  cout << "delete world\n";
+  sleep(1);
   delete_world();
-
+  cout << "terminal reset\n";
+  sleep(1);
   io_reset_terminal();
   
   return 0;

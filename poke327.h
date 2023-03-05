@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string>
+#include <vector>
 
 #include "heap.h"
 
@@ -239,5 +240,55 @@ struct pokedex_stats {
   int game_index;
 };
 
+enum pokemon_gender {
+  male,
+  female
+};
+
+struct pokemon_stats {
+  int HP; 
+  int attack;
+  int defense; 
+  int speed; 
+  int special_attack;
+  int special_defense;
+};
+
+enum statList {
+  HP = 0, 
+  attack,
+  defense, 
+  special_attack,
+  special_defense,
+  speed,
+};
+
+class Pokemon {
+  public:
+    Pokemon(int level);
+    int id;
+    std::string identifier;
+    int species_id;
+    int base_experience;
+    bool is_shiny;
+    // int order;
+    // int is_default;
+    int level;
+    std::vector<pokedex_moves> movesList;
+    pokemon_gender gender;
+    pokemon_stats base_stats;
+    pokemon_stats IVs;
+    pokemon_stats stats;
+};
+
+extern pokedex_pokemon pokemon_list[1093];
+extern pokedex_poke_moves poke_moves[528239];
+extern pokedex_poke_species poke_species[899];
+extern pokedex_poke_stats poke_stats[6553];
+extern pokedex_poke_types poke_types[1676];
+extern pokedex_experience experience[601];
+extern pokedex_type_names type_names[19];
+extern pokedex_moves moves[845];
+extern pokedex_stats stats[9];
 
 #endif
