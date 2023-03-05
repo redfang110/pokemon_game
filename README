@@ -1,1 +1,2 @@
-This program parses one of nine files based on the keywords pokemon, moves, pokemon_moves, pokemon_species, experience, type_names, pokemon_stats, stats, pokemon_types
+This is a program that runs a pokemon style game in the terminal using Ncurses. The player can traverse the map, fight pokemon/trainers, 
+collect pokemon, purchase items, and more.
